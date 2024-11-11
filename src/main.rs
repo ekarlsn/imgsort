@@ -1,16 +1,31 @@
-use iced::futures;
-use iced::widget::{self, center, column, image, row, text};
-use iced::{Center, Element, Fill, Right, Task};
+use anyhow::Result;
+use iced::widget::{self, center, column, row, text};
+use iced::{Element, Task};
+use image::ImageReader;
+use log::debug;
 
 pub fn main() -> iced::Result {
+    simplelog::CombinedLogger::init(vec![
+        simplelog::TermLogger::new(
+            simplelog::LevelFilter::Debug,
+            simplelog::ConfigBuilder::new()
+                .add_filter_allow_str("imgsort")
+                .build(),
+            simplelog::TerminalMode::Mixed,
+            simplelog::ColorChoice::Auto,
+        ),
+        simplelog::WriteLogger::new(
+            simplelog::LevelFilter::Debug,
+            simplelog::Config::default(),
+            std::fs::File::create("imgsort.log").unwrap(),
+        ),
+    ])
+    .unwrap();
     iced::application(Model::title, Model::update, Model::view).run_with(Model::new)
 }
 
 #[derive(Debug)]
 struct Model {
-    image_state: ImageState,
-    current_image: image::Handle,
-    current_index: usize,
     pathlist: PathList,
     preload_list: PreloadList,
 }
@@ -34,17 +49,12 @@ struct PreloadList {
     index: usize,
 }
 
-#[derive(Debug)]
-enum ImageState {
-    Loading,
-    Loaded { pokemon: Pokemon },
-    Errored,
-}
-
 #[derive(Debug, Clone)]
 enum Message {
-    PokemonFound(Result<Pokemon, Error>),
-    Search,
+    UserPressedNextImage,
+    UserPressedPreviousImage,
+    ImagePreloaded(String, widget::image::Handle),
+    ImagePreloadFailed(String),
 }
 
 impl PathList {
@@ -55,54 +65,79 @@ impl PathList {
             .collect();
         Self { paths, index: 0 }
     }
+
+    fn get_offset_index(&self, path: &str) -> Option<isize> {
+        let target_index = self.paths.iter().position(|(p, _)| p == path);
+        if let Some(target_index) = target_index {
+            Some(target_index as isize - self.index as isize)
+        } else {
+            None
+        }
+    }
 }
 
 impl PreloadList {
-    fn new(preload_back_num: usize, preload_front_num: usize) -> Self {
+    fn new(
+        preload_back_num: usize,
+        preload_front_num: usize,
+        paths: Vec<String>,
+    ) -> (Self, Vec<String>) {
         let mut images = Vec::new();
         for _ in 0..preload_back_num {
             images.push(PreloadImage::OutOfRange);
         }
-        for _ in 0..(1 + preload_front_num) {
-            images.push(PreloadImage::Loading);
+        for i in 0..=preload_front_num {
+            images.push(PreloadImage::Loading(
+                paths.get(i).unwrap_or(&"Incorrect path".to_owned()).clone(),
+            ));
         }
-        Self {
-            images,
-            preload_back_num,
-            preload_front_num,
-            index: 0,
+        (
+            Self {
+                images,
+                preload_back_num,
+                preload_front_num,
+                index: preload_back_num,
+            },
+            paths.iter().take(preload_front_num + 1).cloned().collect(),
+        )
+    }
+
+    fn current_image(&self) -> &PreloadImage {
+        &self.images[self.index]
+    }
+
+    fn image_loaded(&mut self, offset_index: isize, handle: widget::image::Handle) {
+        if offset_index >= -(self.preload_back_num as isize)
+            && offset_index <= (self.preload_front_num as isize)
+        {
+            let index = (self.index as isize + offset_index) % (self.images.len() as isize);
+            let index: usize = index.try_into().unwrap(); // TODO, better error handling
+            self.images[index] = PreloadImage::Loaded(handle);
         }
     }
 }
 
 #[derive(Debug)]
 enum PreloadImage {
-    Loading,
-    Loaded(image::Handle),
+    Loading(String),
+    Loaded(widget::image::Handle),
     Errored,
     OutOfRange,
 }
 
-const IMAGE_PATHS: [&str; 3] = ["pictures/one.jpg", "pictures/two.jpg", "pictures/three.jpg"];
-
 impl Model {
     fn new() -> (Self, Task<Message>) {
-        let img: image::Handle = image::Handle::from_path("pictures/one.jpg");
         let paths = get_files_in_folder("pictures").unwrap();
+        debug!("Paths: {:?}", paths);
+        let (preload_list, preload_tasks) = PreloadList::new(2, 3, paths.clone());
+        let action = initial_preloads(preload_tasks);
         (
             Self {
-                image_state: ImageState::Loading,
-                current_image: img,
-                current_index: 0,
-                pathlist: PathList::new(paths),
-                preload_list: PreloadList::new(2, 3),
+                pathlist: PathList::new(paths.clone()),
+                preload_list,
             },
-            Self::search(),
+            action,
         )
-    }
-
-    fn search() -> Task<Message> {
-        Task::perform(Pokemon::search(), Message::PokemonFound)
     }
 
     fn title(&self) -> String {
@@ -110,148 +145,79 @@ impl Model {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
-            Message::PokemonFound(Ok(pokemon)) => {
-                self.image_state = ImageState::Loaded { pokemon };
+        debug!("Message: {:?}", message);
+        let task = match message {
+            Message::UserPressedPreviousImage => {
+                if self.pathlist.index > 0 {
+                    self.pathlist.index = (self.pathlist.index - 1) % self.pathlist.paths.len();
+                    self.preload_list.index =
+                        (self.preload_list.index - 1) % self.preload_list.images.len();
+                }
 
                 Task::none()
             }
-            Message::PokemonFound(Err(_error)) => {
-                self.image_state = ImageState::Errored;
+            Message::UserPressedNextImage => {
+                self.pathlist.index = (self.pathlist.index + 1) % self.pathlist.paths.len();
+                self.preload_list.index =
+                    (self.preload_list.index + 1) % self.preload_list.images.len();
 
                 Task::none()
             }
-            Message::Search => {
-                self.current_index = (self.current_index + 1) % IMAGE_PATHS.len();
-                self.current_image = image::Handle::from_path(IMAGE_PATHS[self.current_index]);
+            Message::ImagePreloadFailed(path) => Task::none(),
+            Message::ImagePreloaded(path, handle) => {
+                if let Some(offset_index) = self.pathlist.get_offset_index(&path) {
+                    debug!("Offset index: {offset_index:?}");
+                    self.preload_list.image_loaded(offset_index, handle);
+                }
 
                 Task::none()
             }
-        }
+        };
+        debug!("Model: {:?}", self.preload_list);
+        task
     }
 
     fn view(&self) -> Element<Message> {
-        let content = column![
-            image::viewer(self.current_image.clone()),
-            button("Keep searching!").on_press(Message::Search),
-        ];
-        center(content).into()
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Pokemon {
-    number: u16,
-    name: String,
-    description: String,
-    image: image::Handle,
-}
-
-impl Pokemon {
-    const TOTAL: u16 = 807;
-
-    fn view(&self, img: &image::Handle) -> Element<Message> {
-        row![
-            image::viewer(img.clone()),
-            column![
-                row![
-                    text(&self.name).size(30).width(Fill),
-                    text!("#{}", self.number).size(20).color([0.5, 0.5, 0.5]),
-                ]
-                .align_y(Center)
-                .spacing(20),
-                self.description.as_ref(),
+        let content2: Element<_> = match self.preload_list.current_image() {
+            PreloadImage::Loaded(handle) => view_image(&handle),
+            PreloadImage::Loading(path) => text(format!("Loading {path}...")).into(),
+            PreloadImage::Errored => text("Error loading image").into(),
+            PreloadImage::OutOfRange => text("Out of range").into(),
+        };
+        let content2 = column![
+            content2,
+            row![
+                button("Previous image").on_press(Message::UserPressedPreviousImage),
+                button("Next image").on_press(Message::UserPressedNextImage),
             ]
-            .spacing(20),
-        ]
-        .spacing(20)
-        .align_y(Center)
-        .into()
+        ];
+
+        center(content2).into()
     }
+}
 
-    async fn search() -> Result<Pokemon, Error> {
-        use rand::Rng;
-        use serde::Deserialize;
-
-        #[derive(Debug, Deserialize)]
-        struct Entry {
-            name: String,
-            flavor_text_entries: Vec<FlavorText>,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct FlavorText {
-            flavor_text: String,
-            language: Language,
-        }
-
-        #[derive(Debug, Deserialize)]
-        struct Language {
-            name: String,
-        }
-
-        let id = {
-            let mut rng = rand::rngs::OsRng;
-
-            rng.gen_range(0..Pokemon::TOTAL)
-        };
-
-        let fetch_entry = async {
-            let url = format!("https://pokeapi.co/api/v2/pokemon-species/{id}");
-
-            reqwest::get(&url).await?.json().await
-        };
-
-        let (entry, image): (Entry, _) =
-            futures::future::try_join(fetch_entry, Self::fetch_image(id)).await?;
-
-        let description = entry
-            .flavor_text_entries
-            .iter()
-            .find(|text| text.language.name == "en")
-            .ok_or(Error::LanguageError)?;
-
-        Ok(Pokemon {
-            number: id,
-            name: entry.name.to_uppercase(),
-            description: description
-                .flavor_text
-                .chars()
-                .map(|c| if c.is_control() { ' ' } else { c })
-                .collect(),
-            image,
+fn initial_preloads(paths: Vec<String>) -> Task<Message> {
+    let tasks: Vec<Task<Message>> = paths
+        .into_iter()
+        .map(|path| {
+            let path2 = path.clone();
+            let fut = tokio::task::spawn_blocking(move || preload_image(path2));
+            Task::perform(fut, |res| match res {
+                Ok((path4, handle)) => Message::ImagePreloaded(path4, handle),
+                Err(_) => Message::ImagePreloadFailed("too hard to know".to_owned()),
+            })
         })
-    }
-
-    async fn fetch_image(id: u16) -> Result<image::Handle, reqwest::Error> {
-        let url = format!(
-            "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{id}.png"
-        );
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let bytes = reqwest::get(&url).await?.bytes().await?;
-
-            Ok(image::Handle::from_bytes(bytes))
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        Ok(image::Handle::from_path(url))
-    }
+        .collect();
+    Task::batch(tasks)
 }
 
-#[derive(Debug, Clone)]
-enum Error {
-    APIError,
-    LanguageError,
+fn preload_image(path: String) -> (String, widget::image::Handle) {
+    let handle = widget::image::Handle::from_path(&path);
+    (path, handle)
 }
 
-impl From<reqwest::Error> for Error {
-    fn from(error: reqwest::Error) -> Error {
-        dbg!(error);
-
-        Error::APIError
-    }
+fn view_image(handle: &iced::widget::image::Handle) -> Element<Message> {
+    iced::widget::image::viewer(handle.clone()).into()
 }
 
 fn button(text: &str) -> widget::Button<'_, Message> {
@@ -268,11 +234,108 @@ fn get_files_in_folder(folder_path: &str) -> std::io::Result<Vec<String>> {
         if path.is_file() {
             if let Some(file_name) = path.file_name() {
                 if let Some(file_name_str) = file_name.to_str() {
-                    file_names.push(file_name_str.to_string());
+                    file_names.push(format!("{folder_path}/{file_name_str}"));
                 }
             }
         }
     }
 
+    file_names.sort();
     Ok(file_names)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    enum PreloadExpect {
+        Loading(String),
+        Loaded,
+        OutOfRange,
+    }
+
+    fn expect_preloads(actual: &Vec<PreloadImage>, expected: Vec<PreloadExpect>) {
+        assert_eq!(actual.len(), expected.len());
+        for i in 0..actual.len() {
+            match &actual[i] {
+                PreloadImage::Loading(path) => match &expected[i] {
+                    PreloadExpect::Loading(expected_path) => {
+                        assert_eq!(path, expected_path);
+                    }
+                    _ => panic!("Expected loading"),
+                },
+                PreloadImage::Loaded(_handle) => match &expected[i] {
+                    PreloadExpect::Loaded => {}
+                    _ => panic!("Expected loaded"),
+                },
+                PreloadImage::OutOfRange => match &expected[i] {
+                    PreloadExpect::OutOfRange => {}
+                    _ => panic!("Expected out of range"),
+                },
+                _ => panic!("Unexpected preload state"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_flow() {
+        simplelog::TermLogger::init(
+            simplelog::LevelFilter::Debug,
+            simplelog::ConfigBuilder::new()
+                .add_filter_allow_str("imgsort")
+                .build(),
+            simplelog::TerminalMode::Mixed,
+            simplelog::ColorChoice::Auto,
+        )
+        .unwrap();
+        let (mut model, tasks) = Model::new();
+        let _ = model.update(Message::ImagePreloaded(
+            "pictures/1.jpg".to_owned(),
+            widget::image::Handle::from_path("pictures/1.jpg"),
+        ));
+
+        expect_preloads(
+            &model.preload_list.images,
+            vec![
+                PreloadExpect::OutOfRange,
+                PreloadExpect::OutOfRange,
+                PreloadExpect::Loaded,
+                PreloadExpect::Loading("pictures/2.jpg".to_owned()),
+                PreloadExpect::Loading("pictures/3.jpg".to_owned()),
+                PreloadExpect::Loading("pictures/4.jpg".to_owned()),
+            ],
+        );
+
+        let _ = model.update(Message::ImagePreloaded(
+            "pictures/3.jpg".to_owned(),
+            widget::image::Handle::from_path("pictures/3.jpg"),
+        ));
+
+        expect_preloads(
+            &model.preload_list.images,
+            vec![
+                PreloadExpect::OutOfRange,
+                PreloadExpect::OutOfRange,
+                PreloadExpect::Loaded,
+                PreloadExpect::Loading("pictures/2.jpg".to_owned()),
+                PreloadExpect::Loaded,
+                PreloadExpect::Loading("pictures/4.jpg".to_owned()),
+            ],
+        );
+
+        let _ = model.update(Message::UserPressedNextImage);
+        expect_preloads(
+            &model.preload_list.images,
+            vec![
+                // PreloadExpect::Loading("pictures/ferris.png".to_owned()),
+                // TODO this should be Loading ferris
+                PreloadExpect::OutOfRange,
+                PreloadExpect::OutOfRange,
+                PreloadExpect::Loaded,
+                PreloadExpect::Loading("pictures/2.jpg".to_owned()),
+                PreloadExpect::Loaded,
+                PreloadExpect::Loading("pictures/4.jpg".to_owned()),
+            ],
+        );
+    }
 }
