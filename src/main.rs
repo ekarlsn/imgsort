@@ -9,6 +9,29 @@ pub fn main() -> iced::Result {
 #[derive(Debug)]
 struct Model {
     image_state: ImageState,
+    current_image: image::Handle,
+    current_index: usize,
+    pathlist: PathList,
+    preload_list: PreloadList,
+}
+
+#[derive(Debug)]
+struct PathList {
+    paths: Vec<(String, Metadata)>,
+    index: usize,
+}
+
+#[derive(Debug)]
+struct Metadata {
+    tags: Vec<String>,
+}
+
+#[derive(Debug)]
+struct PreloadList {
+    images: Vec<PreloadImage>,
+    preload_back_num: usize,
+    preload_front_num: usize,
+    index: usize,
 }
 
 #[derive(Debug)]
@@ -24,11 +47,55 @@ enum Message {
     Search,
 }
 
+impl PathList {
+    fn new(paths: Vec<String>) -> Self {
+        let paths = paths
+            .iter()
+            .map(|path| (path.clone(), Metadata { tags: vec![] }))
+            .collect();
+        Self { paths, index: 0 }
+    }
+}
+
+impl PreloadList {
+    fn new(preload_back_num: usize, preload_front_num: usize) -> Self {
+        let mut images = Vec::new();
+        for _ in 0..preload_back_num {
+            images.push(PreloadImage::OutOfRange);
+        }
+        for _ in 0..(1 + preload_front_num) {
+            images.push(PreloadImage::Loading);
+        }
+        Self {
+            images,
+            preload_back_num,
+            preload_front_num,
+            index: 0,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum PreloadImage {
+    Loading,
+    Loaded(image::Handle),
+    Errored,
+    OutOfRange,
+}
+
+const IMAGE_PATHS: [&str; 3] = ["pictures/one.jpg", "pictures/two.jpg", "pictures/three.jpg"];
+
 impl Model {
     fn new() -> (Self, Task<Message>) {
+        let img: image::Handle = image::Handle::from_path("pictures/one.jpg");
+        let paths = get_files_in_folder("pictures").unwrap();
         (
             Self {
                 image_state: ImageState::Loading,
+                current_image: img,
+                current_index: 0,
+                pathlist: PathList::new(paths),
+                preload_list: PreloadList::new(2, 3),
             },
             Self::search(),
         )
@@ -54,37 +121,20 @@ impl Model {
 
                 Task::none()
             }
-            Message::Search => match self.image_state {
-                ImageState::Loading => Task::none(),
-                _ => {
-                    self.image_state = ImageState::Loading;
+            Message::Search => {
+                self.current_index = (self.current_index + 1) % IMAGE_PATHS.len();
+                self.current_image = image::Handle::from_path(IMAGE_PATHS[self.current_index]);
 
-                    Self::search()
-                }
-            },
+                Task::none()
+            }
         }
     }
 
     fn view(&self) -> Element<Message> {
-        let content: Element<_> = match &self.image_state {
-            ImageState::Loading => text("Searching for Pokémon...").size(40).into(),
-            ImageState::Loaded { pokemon } => column![
-                pokemon.view(),
-                button("Keep searching!").on_press(Message::Search)
-            ]
-            .max_width(500)
-            .spacing(20)
-            .align_x(Right)
-            .into(),
-            ImageState::Errored => column![
-                text("Whoops! Something went wrong...").size(40),
-                button("Try again").on_press(Message::Search)
-            ]
-            .spacing(20)
-            .align_x(Right)
-            .into(),
-        };
-
+        let content = column![
+            image::viewer(self.current_image.clone()),
+            button("Keep searching!").on_press(Message::Search),
+        ];
         center(content).into()
     }
 }
@@ -100,9 +150,9 @@ struct Pokemon {
 impl Pokemon {
     const TOTAL: u16 = 807;
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self, img: &image::Handle) -> Element<Message> {
         row![
-            image::viewer(self.image.clone()),
+            image::viewer(img.clone()),
             column![
                 row![
                     text(&self.name).size(30).width(Fill),
@@ -206,4 +256,23 @@ impl From<reqwest::Error> for Error {
 
 fn button(text: &str) -> widget::Button<'_, Message> {
     widget::button(text).padding(10)
+}
+
+fn get_files_in_folder(folder_path: &str) -> std::io::Result<Vec<String>> {
+    let mut file_names = Vec::new();
+    let entries = std::fs::read_dir(folder_path)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(file_name) = path.file_name() {
+                if let Some(file_name_str) = file_name.to_str() {
+                    file_names.push(file_name_str.to_string());
+                }
+            }
+        }
+    }
+
+    Ok(file_names)
 }

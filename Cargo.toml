@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 getrandom = "0.2.15"
-iced = { version = "0.13.1", features = ["debug", "image", "tokio"] }
+iced = { version = "0.13.1", features = ["advanced", "debug", "image", "tokio"] }
 iced_native = "0.10.3"
 iced_wgpu = { version = "0.13.5", features = ["image"] }
 rand = "0.8.5"
