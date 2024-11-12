@@ -1,7 +1,5 @@
-use anyhow::Result;
 use iced::widget::{self, center, column, row, text};
 use iced::{Element, Task};
-use iced_wgpu::graphics::image::image_rs::EncodableLayout;
 use image::ImageReader;
 use log::debug;
 
@@ -35,7 +33,7 @@ struct Model {
 #[derive(Debug)]
 enum ModelState {
     LoadingListDir,
-    SortingModel(SortingModel),
+    Sorting(SortingModel),
 }
 
 #[derive(Debug)]
@@ -59,6 +57,7 @@ struct PathList {
 
 #[derive(Debug)]
 struct Metadata {
+    #[allow(dead_code)]
     tags: Vec<String>,
 }
 
@@ -94,7 +93,7 @@ enum Message {
     UserPressedPreviousImage,
     ImagePreloaded(String, ImageData),
     ImagePreloadFailed(String),
-    ListDirCompleetd(Vec<String>),
+    ListDirCompleted(Vec<String>),
 }
 
 impl PathList {
@@ -150,8 +149,8 @@ impl PreloadList {
         if offset_index >= -(self.preload_back_num as isize)
             && offset_index <= (self.preload_front_num as isize)
         {
-            let index = (self.index as isize + offset_index) % (self.images.len() as isize);
-            let index: usize = index.try_into().unwrap(); // TODO, better error handling
+            let index = (self.index as isize + offset_index).rem_euclid(self.images.len() as isize);
+            let index: usize = index.try_into().unwrap();
             self.images[index] = PreloadImage::Loaded(image);
         }
     }
@@ -161,7 +160,6 @@ impl PreloadList {
 enum PreloadImage {
     Loading(String),
     Loaded(ImageData),
-    Errored,
     OutOfRange,
 }
 
@@ -177,8 +175,8 @@ impl Model {
         (
             Self {
                 config: Config {
-                    preload_back_num: 1,
-                    preload_front_num: 2,
+                    preload_back_num: 10,
+                    preload_front_num: 30,
                     scale_down_size: (800, 600),
                 },
                 state: ModelState::LoadingListDir,
@@ -201,7 +199,7 @@ impl Model {
             paths.clone(),
         );
         let action = initial_preloads(preload_tasks);
-        self.state = ModelState::SortingModel(SortingModel {
+        self.state = ModelState::Sorting(SortingModel {
             pathlist: PathList::new(paths.clone()),
             preload_list,
         });
@@ -219,7 +217,7 @@ impl Model {
     fn update(&mut self, message: Message) -> Effect {
         debug!("Message: {:?}", message);
         let effect = match &mut self.state {
-            ModelState::SortingModel(model) => Model::update_sorting_model(model, message),
+            ModelState::Sorting(model) => Model::update_sorting_model(model, message),
             ModelState::LoadingListDir => self.update_loading_model(message),
         };
         debug!("Effect: {:?}", effect);
@@ -228,16 +226,17 @@ impl Model {
 
     fn update_loading_model(&mut self, message: Message) -> Effect {
         match message {
-            Message::ListDirCompleetd(paths) => self.go_to_sorting_model(paths),
+            Message::ListDirCompleted(paths) => self.go_to_sorting_model(paths),
             _ => Effect::None,
         }
     }
 
     fn update_sorting_model(model: &mut SortingModel, message: Message) -> Effect {
         match message {
+            Message::Noop => Effect::None,
             Message::UserPressedPreviousImage => user_pressed_previous_image(model),
             Message::UserPressedNextImage => user_pressed_next_image(model),
-            Message::ImagePreloadFailed(path) => Effect::None,
+            Message::ImagePreloadFailed(_path) => Effect::None,
             Message::ImagePreloaded(path, image) => {
                 if let Some(offset_index) = model.pathlist.get_offset_index(&path) {
                     debug!("Offset index: {offset_index:?}");
@@ -246,14 +245,15 @@ impl Model {
 
                 Effect::None
             }
-            Message::Noop => todo!(),
-            Message::ListDirCompleetd(vec) => todo!(),
+            Message::ListDirCompleted(_) => {
+                panic!("Got unexpected ListDirCompleted message, in sorting model")
+            }
         }
     }
 
     fn view(&self) -> Element<Message> {
         match &self.state {
-            ModelState::SortingModel(model) => Model::view_sorting_model(model),
+            ModelState::Sorting(model) => Model::view_sorting_model(model),
             ModelState::LoadingListDir => text("Loading...").into(),
         }
     }
@@ -274,18 +274,62 @@ impl Model {
             ]
             .into(),
             PreloadImage::Loading(path) => text(format!("Loading {path}...")).into(),
-            PreloadImage::Errored => text("Error loading image").into(),
             PreloadImage::OutOfRange => text("Out of range").into(),
         };
+
+        let preload_status_string = preload_list_status_string(&model.preload_list);
+
         let content2 = column![
             content2,
             row![
                 button("Previous image").on_press(Message::UserPressedPreviousImage),
                 button("Next image").on_press(Message::UserPressedNextImage),
-            ]
+            ],
+            text(preload_status_string),
         ];
 
         center(content2).into()
+    }
+}
+
+fn preload_list_status_string(list: &PreloadList) -> String {
+    let preload_state_to_string = |preload_state: &PreloadImage| match preload_state {
+        PreloadImage::Loaded(_) => "O",
+        PreloadImage::Loading(_) => "_",
+        PreloadImage::OutOfRange => "X",
+    };
+
+    let make_preleoad_status_string = |slice: &[PreloadImage]| {
+        slice
+            .iter()
+            .map(preload_state_to_string)
+            .collect::<String>()
+    };
+
+    let me = preload_state_to_string(&list.images[list.index]).to_owned();
+    let me = format!("[{me}]");
+    if list.index < list.preload_back_num {
+        // The left side goes over the edge
+        let left1 =
+            make_preleoad_status_string(&list.images[(list.index + list.preload_front_num) + 1..]);
+        let left2 = make_preleoad_status_string(&list.images[..list.index]);
+
+        let right = make_preleoad_status_string(
+            &list.images[(list.index + 1)..list.index + list.preload_front_num + 1],
+        );
+
+        vec![left1, left2, me, right].join("")
+    } else {
+        // The right side goes over the edge
+        let left = make_preleoad_status_string(
+            &list.images[(list.index - list.preload_back_num)..list.index],
+        );
+
+        let right1 = make_preleoad_status_string(&list.images[(list.index + 1)..]);
+        let right2 =
+            make_preleoad_status_string(&list.images[..list.index - list.preload_back_num]);
+
+        vec![left, me, right1, right2].join("")
     }
 }
 
@@ -373,7 +417,7 @@ fn initial_preloads(paths: Vec<String>) -> Effect {
 
 fn ls_dir_task(path: String) -> Task<Message> {
     Task::perform(get_files_in_folder_async(path), |res| match res {
-        Ok(paths) => Message::ListDirCompleetd(paths),
+        Ok(paths) => Message::ListDirCompleted(paths),
         Err(_) => Message::Noop,
     })
 }
@@ -420,10 +464,6 @@ fn preload_images_task(paths: Vec<String>, config: Config) -> Task<Message> {
     Task::batch(tasks)
 }
 
-fn preload_image_effect(path: String) -> Effect {
-    Effect::PreloadImages(vec![path])
-}
-
 fn preload_image(path: String, config: Config) -> (String, ImageData) {
     let image = ImageReader::open(path.as_str())
         .unwrap()
@@ -432,7 +472,7 @@ fn preload_image(path: String, config: Config) -> (String, ImageData) {
         .resize(
             config.scale_down_size.0,
             config.scale_down_size.1,
-            image::imageops::FilterType::Lanczos3,
+            image::imageops::FilterType::Triangle,
         )
         .to_rgba8();
     let width = image.width();
@@ -472,7 +512,7 @@ mod tests {
     fn expect_preloads(model: &Model, expected_index: usize, expected: Vec<PreloadExpect>) {
         let actual = {
             match &model.state {
-                ModelState::SortingModel(sorting_model) => {
+                ModelState::Sorting(sorting_model) => {
                     assert_eq!(sorting_model.preload_list.index, expected_index);
                     &sorting_model.preload_list.images
                 }
@@ -511,6 +551,40 @@ mod tests {
     }
 
     #[test]
+    fn test_preload_string() {
+        let img = ImageData {
+            width: 1,
+            height: 1,
+            data: vec![],
+        };
+        for (i, expected) in [
+            "__[_]OOO", "__[O]OO_", "_O[O]O__", "OO[O]___", "OO[_]__O", "O_[_]_OO",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let list = PreloadList {
+                index: i,
+                images: vec![
+                    PreloadImage::Loading("pictures/real/1.jpg".to_owned()),
+                    PreloadImage::Loaded(img.clone()),
+                    PreloadImage::Loaded(img.clone()),
+                    PreloadImage::Loaded(img.clone()),
+                    PreloadImage::Loading("pictures/real/5.jpg".to_owned()),
+                    PreloadImage::Loading("pictures/real/6.jpg".to_owned()),
+                ],
+                preload_back_num: 2,
+                preload_front_num: 3,
+            };
+            assert_eq!(
+                preload_list_status_string(&list),
+                expected.clone(),
+                "Tested with index {i}"
+            )
+        }
+    }
+
+    #[test]
     fn test_flow() {
         simplelog::TermLogger::init(
             simplelog::LevelFilter::Debug,
@@ -525,7 +599,7 @@ mod tests {
         let (mut model, effect) = Model::new();
         assert_eq!(effect, Effect::LsDir("pictures/real".to_owned()));
 
-        let effect = model.update(Message::ListDirCompleetd(vec![
+        let effect = model.update(Message::ListDirCompleted(vec![
             "pictures/real/1.jpg".to_owned(),
             "pictures/real/2.jpg".to_owned(),
             "pictures/real/3.jpg".to_owned(),
@@ -669,8 +743,50 @@ mod tests {
             ],
         );
 
-        // Hit the right end
+        // See the right end
         assert_eq!(model.update(Message::UserPressedNextImage), Effect::None,);
+        expect_preloads(
+            &model,
+            1,
+            vec![
+                PreloadExpect::Loading("pictures/real/4.jpg".to_owned()),
+                PreloadExpect::Loading("pictures/real/5.jpg".to_owned()),
+                PreloadExpect::Loading("pictures/real/6.jpg".to_owned()),
+                PreloadExpect::OutOfRange,
+            ],
+        );
+
+        // At the last image
+        assert_eq!(model.update(Message::UserPressedNextImage), Effect::None,);
+        expect_preloads(
+            &model,
+            2,
+            vec![
+                PreloadExpect::OutOfRange,
+                PreloadExpect::Loading("pictures/real/5.jpg".to_owned()),
+                PreloadExpect::Loading("pictures/real/6.jpg".to_owned()),
+                PreloadExpect::OutOfRange,
+            ],
+        );
+
+        // Trying to go past the last image
+        assert_eq!(model.update(Message::UserPressedNextImage), Effect::None,);
+        expect_preloads(
+            &model,
+            2,
+            vec![
+                PreloadExpect::OutOfRange,
+                PreloadExpect::Loading("pictures/real/5.jpg".to_owned()),
+                PreloadExpect::Loading("pictures/real/6.jpg".to_owned()),
+                PreloadExpect::OutOfRange,
+            ],
+        );
+
+        // Go back one
+        assert_eq!(
+            model.update(Message::UserPressedPreviousImage),
+            Effect::PreloadImages(vec!["pictures/real/4.jpg".to_owned()]),
+        );
         expect_preloads(
             &model,
             1,
