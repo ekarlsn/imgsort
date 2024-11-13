@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
+use iced::event::{self, Event};
 use iced::widget::{self, center, column, row, text};
-use iced::{Element, Task};
+use iced::{Element, Subscription, Task};
 use image::ImageReader;
 use log::debug;
 
@@ -21,6 +24,7 @@ pub fn main() -> iced::Result {
     ])
     .unwrap();
     iced::application(Model::title, Model::update_with_task, Model::view)
+        .subscription(Model::subscription)
         .run_with(Model::new_with_task)
 }
 
@@ -34,12 +38,18 @@ struct Model {
 enum ModelState {
     LoadingListDir,
     Sorting(SortingModel),
+    Settings(SettingsModel),
 }
 
 #[derive(Debug)]
 struct SortingModel {
     pathlist: PathList,
     preload_list: PreloadList,
+}
+
+#[derive(Debug)]
+struct SettingsModel {
+    fields: HashMap<SettingsFieldName, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,11 +99,36 @@ struct PreloadList {
 #[derive(Debug, Clone)]
 enum Message {
     Noop,
+    UserPressedGoToSettings,
+    UserPressedGoToSorting,
+    ListDirCompleted(Vec<String>),
+    KeyboardEventOccurred(iced::keyboard::Event),
+    SettingsMessage(SettingsMessage),
+    SortingMessage(SortingMessage),
+}
+
+#[derive(Debug, Clone)]
+enum SortingMessage {
     UserPressedNextImage,
     UserPressedPreviousImage,
     ImagePreloaded(String, ImageData),
     ImagePreloadFailed(String),
-    ListDirCompleted(Vec<String>),
+    KeyboardEvent(iced::keyboard::Event),
+}
+
+#[derive(Debug, Clone)]
+enum SettingsMessage {
+    UserUpdatedField(SettingsFieldName, String),
+    UserPressedBackToSorting,
+    Save,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+enum SettingsFieldName {
+    PreloadBackNum,
+    PreloadFrontNum,
+    ScaleDownSizeWidth,
+    ScaleDownSizeHeight,
 }
 
 impl PathList {
@@ -168,6 +203,7 @@ enum Effect {
     None,
     LsDir(String),
     PreloadImages(Vec<String>),
+    GoToSorting,
 }
 
 impl Model {
@@ -181,7 +217,7 @@ impl Model {
                 },
                 state: ModelState::LoadingListDir,
             },
-            Effect::LsDir("pictures/real".to_owned()),
+            Effect::LsDir("pictures/real-small".to_owned()),
         )
     }
 
@@ -189,6 +225,21 @@ impl Model {
         let (new_self, effect) = Self::new();
         let task = effect_to_task(effect, new_self.config.clone());
         (new_self, task)
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        event::listen_with(Self::subscription_keyboard_filter).map(Message::KeyboardEventOccurred)
+    }
+
+    fn subscription_keyboard_filter(
+        event: Event,
+        _status: event::Status,
+        _id: iced::window::Id,
+    ) -> Option<iced::keyboard::Event> {
+        match event {
+            Event::Keyboard(keyboard_event) => Some(keyboard_event),
+            _ => None,
+        }
     }
 
     fn go_to_sorting_model(&mut self, paths: Vec<String>) -> Effect {
@@ -216,28 +267,67 @@ impl Model {
 
     fn update(&mut self, message: Message) -> Effect {
         debug!("Message: {:?}", message);
-        let effect = match &mut self.state {
-            ModelState::Sorting(model) => Model::update_sorting_model(model, message),
-            ModelState::LoadingListDir => self.update_loading_model(message),
+        let effect = match message {
+            Message::UserPressedGoToSettings => {
+                self.state = ModelState::Settings(SettingsModel {
+                    fields: HashMap::from_iter(
+                        [
+                            (SettingsFieldName::PreloadBackNum, "".to_owned()),
+                            (SettingsFieldName::PreloadFrontNum, "".to_owned()),
+                            (SettingsFieldName::ScaleDownSizeWidth, "".to_owned()),
+                            (SettingsFieldName::ScaleDownSizeHeight, "".to_owned()),
+                        ]
+                        .into_iter(),
+                    ),
+                });
+                Effect::None
+            }
+            Message::Noop => Effect::None,
+            Message::UserPressedGoToSorting => todo!(),
+            Message::ListDirCompleted(paths) => self.go_to_sorting_model(paths),
+            Message::KeyboardEventOccurred(event) => match &mut self.state {
+                ModelState::Sorting(model) => {
+                    Model::update_sorting_model(model, SortingMessage::KeyboardEvent(event))
+                }
+                _ => Effect::None,
+            },
+            Message::SortingMessage(sorting_message) => match &mut self.state {
+                ModelState::Sorting(model) => Model::update_sorting_model(model, sorting_message),
+                _ => panic!("Sorting message ({sorting_message:?}) in non-sorting state"),
+            },
+            Message::SettingsMessage(settings_message) => match &mut self.state {
+                ModelState::Settings(settings_model) => {
+                    Model::update_settings_model(settings_model, settings_message, &mut self.config)
+                }
+                _ => panic!("Settings message ({settings_message:?}) in non-settings state"),
+            },
         };
+
         debug!("Effect: {:?}", effect);
         effect
     }
 
-    fn update_loading_model(&mut self, message: Message) -> Effect {
+    fn update_settings_model(
+        model: &mut SettingsModel,
+        message: SettingsMessage,
+        _config: &mut Config,
+    ) -> Effect {
         match message {
-            Message::ListDirCompleted(paths) => self.go_to_sorting_model(paths),
-            _ => Effect::None,
+            SettingsMessage::UserUpdatedField(field, text) => {
+                model.fields.insert(field, text);
+                Effect::None
+            }
+            SettingsMessage::UserPressedBackToSorting => Effect::GoToSorting,
+            SettingsMessage::Save => todo!(),
         }
     }
 
-    fn update_sorting_model(model: &mut SortingModel, message: Message) -> Effect {
+    fn update_sorting_model(model: &mut SortingModel, message: SortingMessage) -> Effect {
         match message {
-            Message::Noop => Effect::None,
-            Message::UserPressedPreviousImage => user_pressed_previous_image(model),
-            Message::UserPressedNextImage => user_pressed_next_image(model),
-            Message::ImagePreloadFailed(_path) => Effect::None,
-            Message::ImagePreloaded(path, image) => {
+            SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
+            SortingMessage::UserPressedNextImage => user_pressed_next_image(model),
+            SortingMessage::ImagePreloadFailed(_path) => Effect::None,
+            SortingMessage::ImagePreloaded(path, image) => {
                 if let Some(offset_index) = model.pathlist.get_offset_index(&path) {
                     debug!("Offset index: {offset_index:?}");
                     model.preload_list.image_loaded(offset_index, image);
@@ -245,9 +335,14 @@ impl Model {
 
                 Effect::None
             }
-            Message::ListDirCompleted(_) => {
-                panic!("Got unexpected ListDirCompleted message, in sorting model")
-            }
+            SortingMessage::KeyboardEvent(event) => match event {
+                iced::keyboard::Event::KeyPressed { key, .. } => match key.as_ref() {
+                    iced::keyboard::Key::Character("h") => user_pressed_previous_image(model),
+                    iced::keyboard::Key::Character("t") => user_pressed_next_image(model),
+                    _ => Effect::None,
+                },
+                _ => Effect::None,
+            },
         }
     }
 
@@ -255,7 +350,72 @@ impl Model {
         match &self.state {
             ModelState::Sorting(model) => Model::view_sorting_model(model),
             ModelState::LoadingListDir => text("Loading...").into(),
+            ModelState::Settings(settings_model) => Model::view_settings_model(settings_model),
         }
+    }
+
+    fn view_settings_model(model: &SettingsModel) -> Element<Message> {
+        column![
+            text("Settings"),
+            row![
+                text("Preload back"),
+                widget::text_input(
+                    "Preload back",
+                    &model
+                        .fields
+                        .get(&SettingsFieldName::PreloadBackNum)
+                        .unwrap_or(&"".to_owned())
+                )
+                .id("preload_back_num")
+                .on_input(|text| Message::SettingsMessage(
+                    SettingsMessage::UserUpdatedField(SettingsFieldName::PreloadBackNum, text)
+                )),
+            ],
+            row![
+                text("Preload front"),
+                widget::text_input(
+                    "Preload front",
+                    &model
+                        .fields
+                        .get(&SettingsFieldName::PreloadFrontNum)
+                        .unwrap_or(&"".to_owned())
+                )
+                .id("preload_front_num")
+                .on_input(|text| Message::SettingsMessage(
+                    SettingsMessage::UserUpdatedField(SettingsFieldName::PreloadFrontNum, text)
+                )),
+            ],
+            row![
+                text("Scale down size WxH"),
+                widget::text_input(
+                    "Width",
+                    &model
+                        .fields
+                        .get(&SettingsFieldName::ScaleDownSizeWidth)
+                        .unwrap_or(&"".to_owned())
+                )
+                .id("scale_down_size_width")
+                .on_input(|text| Message::SettingsMessage(
+                    SettingsMessage::UserUpdatedField(SettingsFieldName::ScaleDownSizeWidth, text)
+                )),
+                widget::text_input(
+                    "Height",
+                    &model
+                        .fields
+                        .get(&SettingsFieldName::ScaleDownSizeHeight)
+                        .unwrap_or(&"".to_owned())
+                )
+                .id("scale_down_size_height")
+                .on_input(|text| Message::SettingsMessage(
+                    SettingsMessage::UserUpdatedField(SettingsFieldName::ScaleDownSizeHeight, text)
+                )),
+            ],
+            button("Back to sorting").on_press(Message::SettingsMessage(
+                SettingsMessage::UserPressedBackToSorting,
+            )),
+            button("Save").on_press(Message::SettingsMessage(SettingsMessage::Save,)),
+        ]
+        .into()
     }
 
     fn view_sorting_model(model: &SortingModel) -> Element<Message> {
@@ -282,8 +442,13 @@ impl Model {
         let content2 = column![
             content2,
             row![
-                button("Previous image").on_press(Message::UserPressedPreviousImage),
-                button("Next image").on_press(Message::UserPressedNextImage),
+                button("<- Previous").on_press(Message::SortingMessage(
+                    SortingMessage::UserPressedPreviousImage
+                )),
+                button("Next ->").on_press(Message::SortingMessage(
+                    SortingMessage::UserPressedNextImage
+                )),
+                button("Settings").on_press(Message::UserPressedGoToSettings),
             ],
             text(preload_status_string),
         ];
@@ -408,6 +573,7 @@ fn effect_to_task(effect: Effect, config: Config) -> Task<Message> {
         Effect::None => Task::none(),
         Effect::LsDir(path) => ls_dir_task(path),
         Effect::PreloadImages(paths) => preload_images_task(paths, config),
+        Effect::GoToSorting => Task::done(Message::UserPressedGoToSorting),
     }
 }
 
@@ -457,8 +623,12 @@ fn preload_images_task(paths: Vec<String>, config: Config) -> Task<Message> {
         let config2 = config.clone();
         let fut = tokio::task::spawn_blocking(move || preload_image(path, config2));
         tasks.push(Task::perform(fut, |res| match res {
-            Ok((path4, image)) => Message::ImagePreloaded(path4, image),
-            Err(_) => Message::ImagePreloadFailed("too hard to know".to_owned()),
+            Ok((path4, image)) => {
+                Message::SortingMessage(SortingMessage::ImagePreloaded(path4, image))
+            }
+            Err(_) => Message::SortingMessage(SortingMessage::ImagePreloadFailed(
+                "too hard to know".to_owned(),
+            )),
         }))
     }
     Task::batch(tasks)
@@ -545,7 +715,6 @@ mod tests {
                         actual[i]
                     ),
                 },
-                _ => panic!("Unexpected preload state"),
             }
         }
     }
@@ -578,10 +747,21 @@ mod tests {
             };
             assert_eq!(
                 preload_list_status_string(&list),
-                expected.clone(),
+                *expected,
                 "Tested with index {i}"
             )
         }
+    }
+
+    fn preloaded_message(name: &str) -> Message {
+        Message::SortingMessage(SortingMessage::ImagePreloaded(
+            name.to_owned(),
+            ImageData {
+                width: 1,
+                height: 1,
+                data: vec![],
+            },
+        ))
     }
 
     #[test]
@@ -595,6 +775,9 @@ mod tests {
             simplelog::ColorChoice::Auto,
         )
         .unwrap();
+
+        let next_image = Message::SortingMessage(SortingMessage::UserPressedNextImage);
+        let prev_image = Message::SortingMessage(SortingMessage::UserPressedPreviousImage);
 
         let (mut model, effect) = Model::new();
         assert_eq!(effect, Effect::LsDir("pictures/real".to_owned()));
@@ -628,14 +811,7 @@ mod tests {
             ],
         );
 
-        let effect = model.update(Message::ImagePreloaded(
-            "pictures/real/2.jpg".to_owned(),
-            ImageData {
-                data: vec![1, 2, 3],
-                width: 1,
-                height: 1,
-            },
-        ));
+        let effect = model.update(preloaded_message("pictures/real/2.jpg"));
 
         assert_eq!(effect, Effect::None);
 
@@ -651,7 +827,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.update(Message::UserPressedNextImage),
+            model.update(next_image.clone()),
             Effect::PreloadImages(vec!["pictures/real/4.jpg".to_owned(),])
         );
 
@@ -666,10 +842,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(
-            model.update(Message::UserPressedPreviousImage),
-            Effect::None,
-        );
+        assert_eq!(model.update(prev_image.clone()), Effect::None,);
 
         expect_preloads(
             &model,
@@ -683,10 +856,7 @@ mod tests {
         );
 
         // Already at first image, should change nothing
-        assert_eq!(
-            model.update(Message::UserPressedPreviousImage),
-            Effect::None,
-        );
+        assert_eq!(model.update(prev_image.clone()), Effect::None,);
         expect_preloads(
             &model,
             1,
@@ -699,7 +869,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.update(Message::UserPressedNextImage),
+            model.update(next_image.clone()),
             Effect::PreloadImages(vec!["pictures/real/4.jpg".to_owned()]),
         );
         expect_preloads(
@@ -714,7 +884,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.update(Message::UserPressedNextImage),
+            model.update(next_image.clone()),
             Effect::PreloadImages(vec!["pictures/real/5.jpg".to_owned()]),
         );
         expect_preloads(
@@ -729,7 +899,7 @@ mod tests {
         );
 
         assert_eq!(
-            model.update(Message::UserPressedNextImage),
+            model.update(next_image.clone()),
             Effect::PreloadImages(vec!["pictures/real/6.jpg".to_owned()]),
         );
         expect_preloads(
@@ -744,7 +914,7 @@ mod tests {
         );
 
         // See the right end
-        assert_eq!(model.update(Message::UserPressedNextImage), Effect::None,);
+        assert_eq!(model.update(next_image.clone()), Effect::None,);
         expect_preloads(
             &model,
             1,
@@ -757,7 +927,7 @@ mod tests {
         );
 
         // At the last image
-        assert_eq!(model.update(Message::UserPressedNextImage), Effect::None,);
+        assert_eq!(model.update(next_image.clone()), Effect::None,);
         expect_preloads(
             &model,
             2,
@@ -770,7 +940,7 @@ mod tests {
         );
 
         // Trying to go past the last image
-        assert_eq!(model.update(Message::UserPressedNextImage), Effect::None,);
+        assert_eq!(model.update(next_image.clone()), Effect::None,);
         expect_preloads(
             &model,
             2,
@@ -784,7 +954,7 @@ mod tests {
 
         // Go back one
         assert_eq!(
-            model.update(Message::UserPressedPreviousImage),
+            model.update(prev_image.clone()),
             Effect::PreloadImages(vec!["pictures/real/4.jpg".to_owned()]),
         );
         expect_preloads(
