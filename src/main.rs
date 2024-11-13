@@ -49,7 +49,7 @@ struct SortingModel {
 
 #[derive(Debug)]
 struct SettingsModel {
-    fields: HashMap<SettingsFieldName, String>,
+    fields: HashMap<SettingsFieldName, (String, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -269,21 +269,35 @@ impl Model {
         debug!("Message: {:?}", message);
         let effect = match message {
             Message::UserPressedGoToSettings => {
-                self.state = ModelState::Settings(SettingsModel {
-                    fields: HashMap::from_iter(
-                        [
-                            (SettingsFieldName::PreloadBackNum, "".to_owned()),
-                            (SettingsFieldName::PreloadFrontNum, "".to_owned()),
-                            (SettingsFieldName::ScaleDownSizeWidth, "".to_owned()),
-                            (SettingsFieldName::ScaleDownSizeHeight, "".to_owned()),
-                        ]
-                        .into_iter(),
-                    ),
-                });
+                let fields = HashMap::from_iter(
+                    [
+                        (
+                            SettingsFieldName::PreloadBackNum,
+                            (self.config.preload_back_num.to_string(), "".to_owned()),
+                        ),
+                        (
+                            SettingsFieldName::PreloadFrontNum,
+                            (self.config.preload_front_num.to_string(), "".to_owned()),
+                        ),
+                        (
+                            SettingsFieldName::ScaleDownSizeWidth,
+                            (self.config.scale_down_size.0.to_string(), "".to_owned()),
+                        ),
+                        (
+                            SettingsFieldName::ScaleDownSizeHeight,
+                            (self.config.scale_down_size.1.to_string(), "".to_owned()),
+                        ),
+                    ]
+                    .into_iter(),
+                );
+                self.state = ModelState::Settings(SettingsModel { fields });
                 Effect::None
             }
             Message::Noop => Effect::None,
-            Message::UserPressedGoToSorting => todo!(),
+            Message::UserPressedGoToSorting => {
+                self.state = ModelState::LoadingListDir;
+                Effect::LsDir("pictures/real-small".to_owned())
+            }
             Message::ListDirCompleted(paths) => self.go_to_sorting_model(paths),
             Message::KeyboardEventOccurred(event) => match &mut self.state {
                 ModelState::Sorting(model) => {
@@ -293,7 +307,7 @@ impl Model {
             },
             Message::SortingMessage(sorting_message) => match &mut self.state {
                 ModelState::Sorting(model) => Model::update_sorting_model(model, sorting_message),
-                _ => panic!("Sorting message ({sorting_message:?}) in non-sorting state"),
+                _ => Effect::None,
             },
             Message::SettingsMessage(settings_message) => match &mut self.state {
                 ModelState::Settings(settings_model) => {
@@ -314,11 +328,45 @@ impl Model {
     ) -> Effect {
         match message {
             SettingsMessage::UserUpdatedField(field, text) => {
-                model.fields.insert(field, text);
+                model.fields.insert(field, (text, "".to_owned()));
                 Effect::None
             }
             SettingsMessage::UserPressedBackToSorting => Effect::GoToSorting,
-            SettingsMessage::Save => todo!(),
+            SettingsMessage::Save => {
+                let (text, error) = model
+                    .fields
+                    .get_mut(&SettingsFieldName::PreloadBackNum)
+                    .unwrap();
+                match text.parse() {
+                    Ok(num) => _config.preload_back_num = num,
+                    Err(_) => *error = "Invalid number".to_owned(),
+                }
+                let (text, error) = model
+                    .fields
+                    .get_mut(&SettingsFieldName::PreloadFrontNum)
+                    .unwrap();
+                match text.parse() {
+                    Ok(num) => _config.preload_front_num = num,
+                    Err(_) => *error = "Invalid number".to_owned(),
+                }
+                let (text, error) = model
+                    .fields
+                    .get_mut(&SettingsFieldName::ScaleDownSizeWidth)
+                    .unwrap();
+                match text.parse() {
+                    Ok(num) => _config.scale_down_size.0 = num,
+                    Err(_) => *error = "Invalid number".to_owned(),
+                }
+                let (text, error) = model
+                    .fields
+                    .get_mut(&SettingsFieldName::ScaleDownSizeHeight)
+                    .unwrap();
+                match text.parse() {
+                    Ok(num) => _config.scale_down_size.1 = num,
+                    Err(_) => *error = "Invalid number".to_owned(),
+                }
+                Effect::None
+            }
         }
     }
 
@@ -355,60 +403,69 @@ impl Model {
     }
 
     fn view_settings_model(model: &SettingsModel) -> Element<Message> {
+        let (preload_back_text, preload_back_error) = model
+            .fields
+            .get(&SettingsFieldName::PreloadBackNum)
+            .unwrap();
+        let (preload_front_text, preload_front_error) = model
+            .fields
+            .get(&SettingsFieldName::PreloadFrontNum)
+            .unwrap();
+        let (scale_down_width_text, scale_down_width_error) = model
+            .fields
+            .get(&SettingsFieldName::ScaleDownSizeWidth)
+            .unwrap();
+        let (scale_down_height_text, scale_down_height_error) = model
+            .fields
+            .get(&SettingsFieldName::ScaleDownSizeHeight)
+            .unwrap();
+
         column![
             text("Settings"),
             row![
                 text("Preload back"),
-                widget::text_input(
-                    "Preload back",
-                    &model
-                        .fields
-                        .get(&SettingsFieldName::PreloadBackNum)
-                        .unwrap_or(&"".to_owned())
-                )
-                .id("preload_back_num")
-                .on_input(|text| Message::SettingsMessage(
-                    SettingsMessage::UserUpdatedField(SettingsFieldName::PreloadBackNum, text)
-                )),
+                widget::text_input("Preload back", preload_back_text)
+                    .id("preload_back_num")
+                    .on_input(
+                        |text| Message::SettingsMessage(SettingsMessage::UserUpdatedField(
+                            SettingsFieldName::PreloadBackNum,
+                            text
+                        ))
+                    ),
+                text(preload_back_error)
             ],
             row![
                 text("Preload front"),
-                widget::text_input(
-                    "Preload front",
-                    &model
-                        .fields
-                        .get(&SettingsFieldName::PreloadFrontNum)
-                        .unwrap_or(&"".to_owned())
-                )
-                .id("preload_front_num")
-                .on_input(|text| Message::SettingsMessage(
-                    SettingsMessage::UserUpdatedField(SettingsFieldName::PreloadFrontNum, text)
-                )),
+                widget::text_input("Preload front", preload_front_text)
+                    .id("preload_front_num")
+                    .on_input(
+                        |text| Message::SettingsMessage(SettingsMessage::UserUpdatedField(
+                            SettingsFieldName::PreloadFrontNum,
+                            text
+                        ))
+                    ),
+                text(preload_front_error),
             ],
             row![
                 text("Scale down size WxH"),
-                widget::text_input(
-                    "Width",
-                    &model
-                        .fields
-                        .get(&SettingsFieldName::ScaleDownSizeWidth)
-                        .unwrap_or(&"".to_owned())
-                )
-                .id("scale_down_size_width")
-                .on_input(|text| Message::SettingsMessage(
-                    SettingsMessage::UserUpdatedField(SettingsFieldName::ScaleDownSizeWidth, text)
-                )),
-                widget::text_input(
-                    "Height",
-                    &model
-                        .fields
-                        .get(&SettingsFieldName::ScaleDownSizeHeight)
-                        .unwrap_or(&"".to_owned())
-                )
-                .id("scale_down_size_height")
-                .on_input(|text| Message::SettingsMessage(
-                    SettingsMessage::UserUpdatedField(SettingsFieldName::ScaleDownSizeHeight, text)
-                )),
+                widget::text_input("Width", scale_down_width_text)
+                    .id("scale_down_size_width")
+                    .on_input(
+                        |text| Message::SettingsMessage(SettingsMessage::UserUpdatedField(
+                            SettingsFieldName::ScaleDownSizeWidth,
+                            text
+                        ))
+                    ),
+                widget::text(scale_down_width_error),
+                widget::text_input("Height", scale_down_height_text)
+                    .id("scale_down_size_height")
+                    .on_input(
+                        |text| Message::SettingsMessage(SettingsMessage::UserUpdatedField(
+                            SettingsFieldName::ScaleDownSizeHeight,
+                            text
+                        ))
+                    ),
+                widget::text(scale_down_height_error),
             ],
             button("Back to sorting").on_press(Message::SettingsMessage(
                 SettingsMessage::UserPressedBackToSorting,
