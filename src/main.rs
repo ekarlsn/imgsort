@@ -67,8 +67,7 @@ struct PathList {
 
 #[derive(Debug)]
 struct Metadata {
-    #[allow(dead_code)]
-    tags: Vec<String>,
+    tag: Option<String>,
 }
 
 #[derive(Clone)]
@@ -135,7 +134,7 @@ impl PathList {
     fn new(paths: Vec<String>) -> Self {
         let paths = paths
             .iter()
-            .map(|path| (path.clone(), Metadata { tags: vec![] }))
+            .map(|path| (path.clone(), Metadata { tag: None }))
             .collect();
         Self { paths, index: 0 }
     }
@@ -384,9 +383,14 @@ impl Model {
                 Effect::None
             }
             SortingMessage::KeyboardEvent(event) => match event {
-                iced::keyboard::Event::KeyPressed { key, .. } => match key.as_ref() {
+                iced::keyboard::Event::KeyPressed { key, modifiers, .. } => match key.as_ref() {
                     iced::keyboard::Key::Character("h") => user_pressed_previous_image(model),
                     iced::keyboard::Key::Character("t") => user_pressed_next_image(model),
+                    iced::keyboard::Key::Character(c) if !modifiers.control() => {
+                        // Any tagging character
+                        model.pathlist.paths[model.pathlist.index].1.tag = Some(c.to_owned());
+                        Effect::None
+                    }
                     _ => Effect::None,
                 },
                 _ => Effect::None,
@@ -496,8 +500,14 @@ impl Model {
 
         let preload_status_string = preload_list_status_string(&model.preload_list);
 
+        let tag = model.pathlist.paths[model.pathlist.index].1.tag.clone();
+
         let content2 = column![
             content2,
+            match tag {
+                Some(tag) => text(format!("Tag: [{tag}]")),
+                None => text("No tag"),
+            },
             row![
                 button("<- Previous").on_press(Message::SortingMessage(
                     SortingMessage::UserPressedPreviousImage
