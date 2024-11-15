@@ -1,10 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use iced::event::{self, Event};
 use iced::widget::{self, center, column, row, text};
 use iced::{Element, Subscription, Task};
 use image::ImageReader;
 use log::debug;
+
+const TAGGING_CHARS: &str = "aoeupy";
+const PICTURE_DIR: &str = ".";
 
 pub fn main() -> iced::Result {
     simplelog::CombinedLogger::init(vec![
@@ -45,6 +48,15 @@ enum ModelState {
 struct SortingModel {
     pathlist: PathList,
     preload_list: PreloadList,
+
+    // Tags
+    selected_tag: Option<String>,
+    taglist_combobox_state: widget::combo_box::State<String>,
+
+    // Action
+    action_text: String,
+    action_error_text: String,
+    is_typing_action: bool,
 }
 
 #[derive(Debug)]
@@ -97,7 +109,6 @@ struct PreloadList {
 
 #[derive(Debug, Clone)]
 enum Message {
-    Noop,
     UserPressedGoToSettings,
     UserPressedGoToSorting,
     ListDirCompleted(Vec<String>),
@@ -110,6 +121,11 @@ enum Message {
 enum SortingMessage {
     UserPressedNextImage,
     UserPressedPreviousImage,
+    UserSelectedTag(String),
+    UserPressedMove,
+    UserUpdatedActionText(String),
+    UserSubmittedMove,
+    UserAbortedAction,
     ImagePreloaded(String, ImageData),
     ImagePreloadFailed(String),
     KeyboardEvent(iced::keyboard::Event),
@@ -146,6 +162,14 @@ impl PathList {
         } else {
             None
         }
+    }
+
+    fn tag_of(&self, path: &str) -> Option<String> {
+        self.paths
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, meta)| meta.tag.clone())
+            .flatten()
     }
 }
 
@@ -200,9 +224,11 @@ enum PreloadImage {
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum Effect {
     None,
-    LsDir(String),
+    LsDir,
     PreloadImages(Vec<String>),
     GoToSorting,
+    MoveImages(String),
+    FocusMoveField,
 }
 
 impl Model {
@@ -216,13 +242,13 @@ impl Model {
                 },
                 state: ModelState::LoadingListDir,
             },
-            Effect::LsDir("pictures/real-small".to_owned()),
+            Effect::LsDir,
         )
     }
 
     fn new_with_task() -> (Self, Task<Message>) {
         let (new_self, effect) = Self::new();
-        let task = effect_to_task(effect, new_self.config.clone());
+        let task = effect_to_task(effect, &new_self, new_self.config.clone());
         (new_self, task)
     }
 
@@ -242,18 +268,70 @@ impl Model {
     }
 
     fn go_to_sorting_model(&mut self, paths: Vec<String>) -> Effect {
-        debug!("Going to sorting model");
         let (preload_list, preload_tasks) = PreloadList::new(
             self.config.preload_back_num,
             self.config.preload_front_num,
             paths.clone(),
         );
-        let action = initial_preloads(preload_tasks);
-        self.state = ModelState::Sorting(SortingModel {
-            pathlist: PathList::new(paths.clone()),
-            preload_list,
-        });
-        action
+        let preload_images_effect = initial_preloads(preload_tasks);
+
+        match &mut self.state {
+            ModelState::Sorting(sorting) => {
+                debug!("In sorting model, received new lsdir, updating");
+
+                // Preload list
+                sorting.preload_list = preload_list;
+
+                // Pathlist
+                let index: usize = {
+                    if let Some(previous_image) = sorting
+                        .pathlist
+                        .paths
+                        .get(sorting.pathlist.index)
+                        .map(|p| &p.0)
+                    {
+                        paths.iter().position(|p| p == previous_image).unwrap_or(0)
+                    } else {
+                        0
+                    }
+                };
+
+                let paths = paths
+                    .iter()
+                    .map(|path| {
+                        (
+                            path.clone(),
+                            Metadata {
+                                tag: sorting.pathlist.tag_of(path),
+                            },
+                        )
+                    })
+                    .collect();
+
+                sorting.pathlist = PathList { index, paths };
+
+                // Taglist combobox
+                let all_tags = find_all_tags(sorting.pathlist.paths.as_slice());
+                sorting.taglist_combobox_state = widget::combo_box::State::new(all_tags);
+                sorting.selected_tag = None;
+            }
+
+            _ => {
+                debug!("Going to new sorting model");
+
+                self.state = ModelState::Sorting(SortingModel {
+                    pathlist: PathList::new(paths.clone()),
+                    preload_list,
+                    selected_tag: None,
+                    taglist_combobox_state: widget::combo_box::State::default(),
+                    action_text: "".to_owned(),
+                    action_error_text: "".to_owned(),
+                    is_typing_action: false,
+                });
+            }
+        }
+
+        preload_images_effect
     }
 
     fn title(&self) -> String {
@@ -261,7 +339,7 @@ impl Model {
     }
 
     fn update_with_task(&mut self, message: Message) -> Task<Message> {
-        effect_to_task(self.update(message), self.config.clone())
+        effect_to_task(self.update(message), self, self.config.clone())
     }
 
     fn update(&mut self, message: Message) -> Effect {
@@ -292,10 +370,9 @@ impl Model {
                 self.state = ModelState::Settings(SettingsModel { fields });
                 Effect::None
             }
-            Message::Noop => Effect::None,
             Message::UserPressedGoToSorting => {
                 self.state = ModelState::LoadingListDir;
-                Effect::LsDir("pictures/real-small".to_owned())
+                Effect::LsDir
             }
             Message::ListDirCompleted(paths) => self.go_to_sorting_model(paths),
             Message::KeyboardEventOccurred(event) => match &mut self.state {
@@ -382,19 +459,67 @@ impl Model {
 
                 Effect::None
             }
+            SortingMessage::KeyboardEvent(_) if model.is_typing_action => Effect::None,
             SortingMessage::KeyboardEvent(event) => match event {
                 iced::keyboard::Event::KeyPressed { key, modifiers, .. } => match key.as_ref() {
                     iced::keyboard::Key::Character("h") => user_pressed_previous_image(model),
-                    iced::keyboard::Key::Character("t") => user_pressed_next_image(model),
-                    iced::keyboard::Key::Character(c) if !modifiers.control() => {
+                    iced::keyboard::Key::Character("t" | "l") => user_pressed_next_image(model),
+                    iced::keyboard::Key::Character(c)
+                        if !modifiers.control() && TAGGING_CHARS.contains(c) =>
+                    {
                         // Any tagging character
                         model.pathlist.paths[model.pathlist.index].1.tag = Some(c.to_owned());
+                        let all_tags = find_all_tags(&model.pathlist.paths.as_slice());
+                        model.taglist_combobox_state = widget::combo_box::State::new(all_tags);
+                        user_pressed_next_image(model)
+                    }
+                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) => {
+                        model.pathlist.paths[model.pathlist.index].1.tag = Some("D".to_owned());
+                        let all_tags = find_all_tags(&model.pathlist.paths.as_slice());
+                        model.taglist_combobox_state = widget::combo_box::State::new(all_tags);
+                        user_pressed_next_image(model)
+                    }
+                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace) => {
+                        model.pathlist.paths[model.pathlist.index].1.tag = None;
+                        let all_tags = find_all_tags(&model.pathlist.paths.as_slice());
+                        model.taglist_combobox_state = widget::combo_box::State::new(all_tags);
                         Effect::None
                     }
                     _ => Effect::None,
                 },
                 _ => Effect::None,
             },
+            SortingMessage::UserSelectedTag(tag) => {
+                model.selected_tag = Some(tag);
+                Effect::None
+            }
+            SortingMessage::UserUpdatedActionText(text) => {
+                model.action_text = text;
+
+                Effect::None
+            }
+            SortingMessage::UserPressedMove => {
+                model.is_typing_action = true;
+                Effect::FocusMoveField
+            }
+            SortingMessage::UserSubmittedMove => {
+                if model.action_text.is_empty() {
+                    model.action_error_text =
+                        "Type the destination folder in the text box".to_owned();
+                    Effect::None
+                } else {
+                    model.action_error_text = "".to_owned();
+                    model.is_typing_action = false;
+                    Effect::MoveImages(model.action_text.clone())
+                }
+            }
+            SortingMessage::UserAbortedAction => {
+                model.is_typing_action = false;
+                model.action_error_text = "".to_owned();
+                model.action_text = "".to_owned();
+
+                Effect::None
+            }
         }
     }
 
@@ -480,7 +605,7 @@ impl Model {
     }
 
     fn view_sorting_model(model: &SortingModel) -> Element<Message> {
-        let content2: Element<_> = match model.preload_list.current_image() {
+        let image: Element<_> = match model.preload_list.current_image() {
             PreloadImage::Loaded(image) => column![
                 view_image(&image),
                 text(format!(
@@ -502,8 +627,39 @@ impl Model {
 
         let tag = model.pathlist.paths[model.pathlist.index].1.tag.clone();
 
-        let content2 = column![
-            content2,
+        let actions: Element<_> = if model.selected_tag.is_some() {
+            if model.is_typing_action {
+                let action_text_input = column![
+                    widget::text_input("Action text", &model.action_text).on_input(|text| {
+                        Message::SortingMessage(SortingMessage::UserUpdatedActionText(text))
+                    }),
+                    row![
+                        button("Submit")
+                            .on_press(Message::SortingMessage(SortingMessage::UserSubmittedMove)),
+                        button("Abort")
+                            .on_press(Message::SortingMessage(SortingMessage::UserAbortedAction)),
+                    ],
+                ];
+                if model.action_error_text.is_empty() {
+                    action_text_input.into()
+                } else {
+                    column![
+                        text(&model.action_error_text).color(iced::Color::from_rgb(1.0, 0.0, 0.0)),
+                        action_text_input,
+                    ]
+                    .into()
+                }
+            } else {
+                button("Move")
+                    .on_press(Message::SortingMessage(SortingMessage::UserPressedMove))
+                    .into()
+            }
+        } else {
+            text("Select a tag for actions ...").into()
+        };
+
+        let content = column![
+            image,
             match tag {
                 Some(tag) => text(format!("Tag: [{tag}]")),
                 None => text("No tag"),
@@ -518,17 +674,36 @@ impl Model {
                 button("Settings").on_press(Message::UserPressedGoToSettings),
             ],
             text(preload_status_string),
+            widget::combo_box(
+                &model.taglist_combobox_state,
+                "Select a tag",
+                model.selected_tag.as_ref(),
+                |tag| Message::SortingMessage(SortingMessage::UserSelectedTag(tag))
+            ),
+            actions,
         ];
 
-        center(content2).into()
+        center(content).into()
     }
+}
+
+fn find_all_tags(paths: &[(String, Metadata)]) -> Vec<String> {
+    let mut tags = paths
+        .iter()
+        .filter_map(|(_, meta)| meta.tag.as_ref())
+        .collect::<HashSet<&String>>()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<String>>();
+    tags.sort();
+    tags
 }
 
 fn preload_list_status_string(list: &PreloadList) -> String {
     let preload_state_to_string = |preload_state: &PreloadImage| match preload_state {
         PreloadImage::Loaded(_) => "O",
-        PreloadImage::Loading(_) => "_",
-        PreloadImage::OutOfRange => "X",
+        PreloadImage::Loading(_) => "x",
+        PreloadImage::OutOfRange => " ",
     };
 
     let make_preleoad_status_string = |slice: &[PreloadImage]| {
@@ -635,12 +810,40 @@ fn user_pressed_next_image(model: &mut SortingModel) -> Effect {
     effect
 }
 
-fn effect_to_task(effect: Effect, config: Config) -> Task<Message> {
+fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message> {
     match effect {
         Effect::None => Task::none(),
-        Effect::LsDir(path) => ls_dir_task(path),
+        Effect::LsDir => ls_dir_task(PICTURE_DIR.to_owned()),
         Effect::PreloadImages(paths) => preload_images_task(paths, config),
         Effect::GoToSorting => Task::done(Message::UserPressedGoToSorting),
+        Effect::MoveImages(destination) => {
+            println!("I won't actually move any images, but I'll print a command for you");
+            let mut files_to_move = Vec::new();
+            match &model.state {
+                ModelState::Sorting(sorting) => {
+                    if let Some(tag) = &sorting.selected_tag {
+                        for (path, meta) in &sorting.pathlist.paths {
+                            if meta.tag == Some(tag.clone()) {
+                                files_to_move.push(path.clone());
+                            }
+                        }
+                    }
+                }
+                _ => panic!("MoveImages effect should only be called in the sorting state"),
+            }
+            if files_to_move.is_empty() {
+                println!("No files to move");
+                Task::none()
+            } else {
+                println!("mv {} {}", files_to_move.join(" "), destination);
+                mv_files_task(files_to_move, destination)
+                    .then(|()| ls_dir_task(PICTURE_DIR.to_owned()))
+            }
+        }
+        Effect::FocusMoveField => {
+            // TODO
+            Task::none()
+        }
     }
 }
 
@@ -648,10 +851,37 @@ fn initial_preloads(paths: Vec<String>) -> Effect {
     Effect::PreloadImages(paths)
 }
 
+fn mv_files_task(files: Vec<String>, destination: String) -> Task<()> {
+    Task::future(mv_files_async(files, destination))
+}
+
+async fn mv_files_async(files: Vec<String>, destination: String) {
+    match tokio::task::spawn_blocking(move || mv_files(files, destination)).await {
+        Ok(_) => (),
+        Err(_) => panic!("Could not spawn task"),
+    }
+}
+
+fn mv_files(files: Vec<String>, destination: String) {
+    // Create directory if it doesn't exist
+    let dest_path = std::path::Path::new(&destination);
+    if !dest_path.exists() {
+        std::fs::create_dir(dest_path).unwrap();
+    }
+    let dest_path = std::path::Path::new(&destination).canonicalize().unwrap();
+    for file in files {
+        println!("Moving {file} to {destination}");
+        let basename = std::path::Path::new(&file).file_name().unwrap();
+        let mut dest = dest_path.clone();
+        dest.push(basename);
+        std::fs::rename(&file, dest).unwrap();
+    }
+}
+
 fn ls_dir_task(path: String) -> Task<Message> {
     Task::perform(get_files_in_folder_async(path), |res| match res {
         Ok(paths) => Message::ListDirCompleted(paths),
-        Err(_) => Message::Noop,
+        Err(_) => panic!("Could not list directory"),
     })
 }
 
@@ -847,7 +1077,7 @@ mod tests {
         let prev_image = Message::SortingMessage(SortingMessage::UserPressedPreviousImage);
 
         let (mut model, effect) = Model::new();
-        assert_eq!(effect, Effect::LsDir("pictures/real".to_owned()));
+        assert_eq!(effect, Effect::LsDir);
 
         let effect = model.update(Message::ListDirCompleted(vec![
             "pictures/real/1.jpg".to_owned(),
