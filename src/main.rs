@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use iced::event::{self, Event};
 use iced::widget::{self, center, column, row, text};
-use iced::{Element, Subscription, Task};
+use iced::{Color, Element, Length, Subscription, Task};
+use iced_aw::{drop_down, DropDown};
 use image::ImageReader;
 use log::debug;
 
@@ -52,10 +53,11 @@ struct SortingModel {
     // Tags
     selected_tag: Option<String>,
     taglist_combobox_state: widget::combo_box::State<String>,
+    expanded_dropdown: Option<String>,
+    editing_tag_name: Option<(String, String)>,
+    tag_names: HashMap<String, String>,
 
     // Action
-    action_text: String,
-    action_error_text: String,
     is_typing_action: bool,
 }
 
@@ -121,11 +123,12 @@ enum Message {
 enum SortingMessage {
     UserPressedNextImage,
     UserPressedPreviousImage,
-    UserSelectedTag(String),
-    UserPressedMove,
-    UserUpdatedActionText(String),
-    UserSubmittedMove,
-    UserAbortedAction,
+    UserPressedMoveTag(String),
+    UserPressedTagButton(String),
+    UserPressedRenameTag(String),
+    UserPressedSubmitRenameTag,
+    UserEditTagName(String),
+    UserPressedTagMenu(Option<String>),
     ImagePreloaded(String, ImageData),
     ImagePreloadFailed(String),
     KeyboardEvent(iced::keyboard::Event),
@@ -227,8 +230,7 @@ enum Effect {
     LsDir,
     PreloadImages(Vec<String>),
     GoToSorting,
-    MoveImages(String),
-    FocusMoveField,
+    MoveImagesWithTag(String),
 }
 
 impl Model {
@@ -324,8 +326,14 @@ impl Model {
                     preload_list,
                     selected_tag: None,
                     taglist_combobox_state: widget::combo_box::State::default(),
-                    action_text: "".to_owned(),
-                    action_error_text: "".to_owned(),
+                    expanded_dropdown: None,
+                    editing_tag_name: None,
+                    tag_names: HashMap::from_iter([
+                        ("a".to_owned(), "Red".to_owned()),
+                        ("o".to_owned(), "Green".to_owned()),
+                        ("e".to_owned(), "Yellow".to_owned()),
+                        ("u".to_owned(), "Blue".to_owned()),
+                    ]),
                     is_typing_action: false,
                 });
             }
@@ -468,16 +476,10 @@ impl Model {
                         if !modifiers.control() && TAGGING_CHARS.contains(c) =>
                     {
                         // Any tagging character
-                        model.pathlist.paths[model.pathlist.index].1.tag = Some(c.to_owned());
-                        let all_tags = find_all_tags(&model.pathlist.paths.as_slice());
-                        model.taglist_combobox_state = widget::combo_box::State::new(all_tags);
-                        user_pressed_next_image(model)
+                        Model::tag_and_move_on(model, c.to_owned())
                     }
                     iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) => {
-                        model.pathlist.paths[model.pathlist.index].1.tag = Some("D".to_owned());
-                        let all_tags = find_all_tags(&model.pathlist.paths.as_slice());
-                        model.taglist_combobox_state = widget::combo_box::State::new(all_tags);
-                        user_pressed_next_image(model)
+                        Model::tag_and_move_on(model, "D".to_owned())
                     }
                     iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace) => {
                         model.pathlist.paths[model.pathlist.index].1.tag = None;
@@ -489,38 +491,48 @@ impl Model {
                 },
                 _ => Effect::None,
             },
-            SortingMessage::UserSelectedTag(tag) => {
-                model.selected_tag = Some(tag);
+            SortingMessage::UserPressedTagButton(tag) => {
+                Model::tag_and_move_on(model, tag);
                 Effect::None
             }
-            SortingMessage::UserUpdatedActionText(text) => {
-                model.action_text = text;
+            SortingMessage::UserPressedRenameTag(tag) => {
+                model.selected_tag = None;
+                model.editing_tag_name = Some((tag, "".to_owned()));
+                model.expanded_dropdown = None;
+                Effect::None
+            }
+            SortingMessage::UserPressedSubmitRenameTag => {
+                model.selected_tag = None;
+                let (tag, new_tag_name) = model.editing_tag_name.take().unwrap();
+                model.tag_names.insert(tag, new_tag_name);
+                model.editing_tag_name = None;
+                Effect::None
+            }
+            SortingMessage::UserEditTagName(text) => {
+                model.editing_tag_name.as_mut().unwrap().1 = text;
 
                 Effect::None
             }
-            SortingMessage::UserPressedMove => {
-                model.is_typing_action = true;
-                Effect::FocusMoveField
+            SortingMessage::UserPressedMoveTag(tag) => {
+                model.expanded_dropdown = None;
+                Effect::MoveImagesWithTag(tag)
             }
-            SortingMessage::UserSubmittedMove => {
-                if model.action_text.is_empty() {
-                    model.action_error_text =
-                        "Type the destination folder in the text box".to_owned();
-                    Effect::None
+            SortingMessage::UserPressedTagMenu(maybe_tag) => {
+                if model.expanded_dropdown.as_ref() == maybe_tag.as_ref() {
+                    model.expanded_dropdown = None;
                 } else {
-                    model.action_error_text = "".to_owned();
-                    model.is_typing_action = false;
-                    Effect::MoveImages(model.action_text.clone())
+                    model.expanded_dropdown = maybe_tag;
                 }
-            }
-            SortingMessage::UserAbortedAction => {
-                model.is_typing_action = false;
-                model.action_error_text = "".to_owned();
-                model.action_text = "".to_owned();
-
                 Effect::None
             }
         }
+    }
+
+    fn tag_and_move_on(model: &mut SortingModel, tag: String) -> Effect {
+        model.pathlist.paths[model.pathlist.index].1.tag = Some(tag);
+        let all_tags = find_all_tags(&model.pathlist.paths.as_slice());
+        model.taglist_combobox_state = widget::combo_box::State::new(all_tags);
+        user_pressed_next_image(model)
     }
 
     fn view(&self) -> Element<Message> {
@@ -609,14 +621,11 @@ impl Model {
             PreloadImage::Loaded(image) => column![
                 view_image(&image),
                 text(format!(
-                    "Image {index}/{total}",
+                    "({index}/{total}) {path}",
                     index = model.pathlist.index + 1,
-                    total = model.pathlist.paths.len()
+                    total = model.pathlist.paths.len(),
+                    path = model.pathlist.paths[model.pathlist.index].0,
                 )),
-                text(format!(
-                    "Path: {path}",
-                    path = model.pathlist.paths[model.pathlist.index].0
-                ))
             ]
             .into(),
             PreloadImage::Loading(path) => text(format!("Loading {path}...")).into(),
@@ -627,43 +636,27 @@ impl Model {
 
         let tag = model.pathlist.paths[model.pathlist.index].1.tag.clone();
 
-        let actions: Element<_> = if model.selected_tag.is_some() {
-            if model.is_typing_action {
-                let action_text_input = column![
-                    widget::text_input("Action text", &model.action_text).on_input(|text| {
-                        Message::SortingMessage(SortingMessage::UserUpdatedActionText(text))
-                    }),
-                    row![
-                        button("Submit")
-                            .on_press(Message::SortingMessage(SortingMessage::UserSubmittedMove)),
-                        button("Abort")
-                            .on_press(Message::SortingMessage(SortingMessage::UserAbortedAction)),
-                    ],
-                ];
-                if model.action_error_text.is_empty() {
-                    action_text_input.into()
-                } else {
-                    column![
-                        text(&model.action_error_text).color(iced::Color::from_rgb(1.0, 0.0, 0.0)),
-                        action_text_input,
-                    ]
-                    .into()
-                }
-            } else {
-                button("Move")
-                    .on_press(Message::SortingMessage(SortingMessage::UserPressedMove))
-                    .into()
-            }
-        } else {
-            text("Select a tag for actions ...").into()
-        };
+        let mut tag_count = HashMap::new();
 
+        for (_picture, metadata) in model.pathlist.paths.iter() {
+            if let Some(tag) = metadata.tag.clone() {
+                let count = tag_count.entry(tag).or_insert(0);
+                *count += 1;
+            }
+        }
+
+        let tag_buttons = view_tag_button_row(
+            model.expanded_dropdown.as_ref().unwrap_or(&"".to_owned()),
+            &model.tag_names,
+            &tag_count,
+        );
         let content = column![
             image,
             match tag {
                 Some(tag) => text(format!("Tag: [{tag}]")),
                 None => text("No tag"),
             },
+            tag_buttons,
             row![
                 button("<- Previous").on_press(Message::SortingMessage(
                     SortingMessage::UserPressedPreviousImage
@@ -674,17 +667,150 @@ impl Model {
                 button("Settings").on_press(Message::UserPressedGoToSettings),
             ],
             text(preload_status_string),
-            widget::combo_box(
-                &model.taglist_combobox_state,
-                "Select a tag",
-                model.selected_tag.as_ref(),
-                |tag| Message::SortingMessage(SortingMessage::UserSelectedTag(tag))
-            ),
-            actions,
         ];
 
-        center(content).into()
+        let content = center(content);
+
+        let popup = model.editing_tag_name.as_ref().map(|(_, text)| {
+            widget::text_input("tag name", text)
+                .on_input(|text| Message::SortingMessage(SortingMessage::UserEditTagName(text)))
+                .on_submit(Message::SortingMessage(
+                    SortingMessage::UserPressedSubmitRenameTag,
+                ))
+        });
+
+        let stack = widget::Stack::new().push(content).push_maybe(popup);
+
+        stack.into()
     }
+}
+
+fn view_tag_button_row<'a>(
+    expanded: &str,
+    names: &'a HashMap<String, String>,
+    nums: &HashMap<String, u32>,
+) -> Element<'a, Message> {
+    let red = names.get("a").map(|s| s.as_str()).unwrap_or("Red");
+    let green = names.get("o").map(|s| s.as_str()).unwrap_or("Green");
+    let yellow = names.get("e").map(|s| s.as_str()).unwrap_or("Yellow");
+    let blue = names.get("u").map(|s| s.as_str()).unwrap_or("Blue");
+    let red_num = *nums.get("a").unwrap_or(&0);
+    let green_num = *nums.get("o").unwrap_or(&0);
+    let yellow_num = *nums.get("e").unwrap_or(&0);
+    let blue_num = *nums.get("u").unwrap_or(&0);
+    row![
+        view_tag_button(
+            red,
+            "a",
+            red_num,
+            Color::from_rgb(1.0, 0.0, 0.0),
+            Color::from_rgb(1.0, 0.4, 0.4),
+            Color::from_rgb(5.0, 0.0, 0.0),
+            expanded == "a",
+        ),
+        view_tag_button(
+            green,
+            "o",
+            green_num,
+            Color::from_rgb(0.0, 0.6, 0.0),
+            Color::from_rgb(0.2, 6.0, 0.2),
+            Color::from_rgb(0.0, 0.3, 0.0),
+            expanded == "o",
+        ),
+        view_tag_button(
+            yellow,
+            "e",
+            yellow_num,
+            Color::from_rgb(0.8, 0.8, 0.0),
+            Color::from_rgb(0.8, 0.8, 0.6),
+            Color::from_rgb(0.3, 0.3, 0.0),
+            expanded == "e",
+        ),
+        view_tag_button(
+            blue,
+            "u",
+            blue_num,
+            Color::from_rgb(0.0, 0.0, 1.0),
+            Color::from_rgb(0.4, 0.4, 1.0),
+            Color::from_rgb(0.0, 0.0, 0.5),
+            expanded == "u",
+        ),
+    ]
+    .into()
+}
+
+fn view_tag_button<'a>(
+    text: &'a str,
+    tag: &str,
+    num: u32,
+    basic_bg: Color,
+    hover_bg: Color,
+    press_bg: Color,
+    expanded: bool,
+) -> Element<'a, Message> {
+    let style = iced::widget::button::Style {
+        background: Some(iced::Background::Color(basic_bg)),
+        text_color: iced::Color::from_rgb(1.0, 1.0, 1.0),
+        border: iced::Border::default(),
+        shadow: iced::Shadow::default(),
+    };
+    let style_hovered = style
+        .clone()
+        .with_background(iced::Background::Color(hover_bg));
+
+    let style_pressed = style
+        .clone()
+        .with_background(iced::Background::Color(press_bg));
+
+    let tag_button = widget::Button::new(widget::text!("{text} ({num})"))
+        .style(move |_, status| match &status {
+            widget::button::Status::Active => style.clone(),
+            widget::button::Status::Hovered => style_hovered,
+            widget::button::Status::Pressed => style_pressed,
+            widget::button::Status::Disabled => style,
+        })
+        .on_press(Message::SortingMessage(
+            SortingMessage::UserPressedTagButton(tag.to_owned()),
+        ))
+        .width(350)
+        .height(40);
+
+    let more_button = widget::button("...")
+        .style(move |_, status| match &status {
+            widget::button::Status::Active => style.clone(),
+            widget::button::Status::Hovered => style_hovered,
+            widget::button::Status::Pressed => style_pressed,
+            widget::button::Status::Disabled => style,
+        })
+        .on_press(Message::SortingMessage(SortingMessage::UserPressedTagMenu(
+            Some(tag.to_owned()),
+        )))
+        .width(45)
+        .height(40);
+
+    let drop_down_menu = column![
+        tag_dropdown_button(
+            "Rename",
+            SortingMessage::UserPressedRenameTag(tag.to_owned())
+        ),
+        tag_dropdown_button("Move", SortingMessage::UserPressedMoveTag(tag.to_owned())),
+    ];
+
+    let drop_down_button = DropDown::new(more_button, drop_down_menu, expanded)
+        .alignment(drop_down::Alignment::Top)
+        .on_dismiss(Message::SortingMessage(SortingMessage::UserPressedTagMenu(
+            None,
+        )))
+        .width(Length::Fill);
+
+    row![tag_button, drop_down_button].into()
+}
+
+fn tag_dropdown_button(text: &str, message: SortingMessage) -> Element<Message> {
+    button(text)
+        .on_press(Message::SortingMessage(message))
+        .width(250)
+        .into()
 }
 
 fn find_all_tags(paths: &[(String, Metadata)]) -> Vec<String> {
@@ -816,33 +942,31 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
         Effect::LsDir => ls_dir_task(PICTURE_DIR.to_owned()),
         Effect::PreloadImages(paths) => preload_images_task(paths, config),
         Effect::GoToSorting => Task::done(Message::UserPressedGoToSorting),
-        Effect::MoveImages(destination) => {
-            println!("I won't actually move any images, but I'll print a command for you");
-            let mut files_to_move = Vec::new();
-            match &model.state {
-                ModelState::Sorting(sorting) => {
-                    if let Some(tag) = &sorting.selected_tag {
+        Effect::MoveImagesWithTag(tag) => {
+            let (files_to_move, tag_name) = {
+                let mut files_to_move = Vec::new();
+                let tag_name;
+                match &model.state {
+                    ModelState::Sorting(sorting) => {
                         for (path, meta) in &sorting.pathlist.paths {
                             if meta.tag == Some(tag.clone()) {
                                 files_to_move.push(path.clone());
                             }
                         }
+                        tag_name = sorting.tag_names.get(&tag).unwrap_or(&tag).clone();
                     }
+                    _ => panic!("MoveImages effect should only be called in the sorting state"),
                 }
-                _ => panic!("MoveImages effect should only be called in the sorting state"),
-            }
+                (files_to_move, tag_name)
+            };
             if files_to_move.is_empty() {
                 println!("No files to move");
                 Task::none()
             } else {
-                println!("mv {} {}", files_to_move.join(" "), destination);
-                mv_files_task(files_to_move, destination)
+                println!("mv {} \"{}\"", files_to_move.join(" "), tag_name);
+                mv_files_task(files_to_move, tag_name)
                     .then(|()| ls_dir_task(PICTURE_DIR.to_owned()))
             }
-        }
-        Effect::FocusMoveField => {
-            // TODO
-            Task::none()
         }
     }
 }
