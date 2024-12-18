@@ -51,14 +51,10 @@ struct SortingModel {
     preload_list: PreloadList,
 
     // Tags
-    selected_tag: Option<String>,
     taglist_combobox_state: widget::combo_box::State<String>,
     expanded_dropdown: Option<String>,
-    editing_tag_name: Option<(String, String)>,
+    editing_tag_name: Option<(String, String, widget::text_input::Id)>,
     tag_names: HashMap<String, String>,
-
-    // Action
-    is_typing_action: bool,
 }
 
 #[derive(Debug)]
@@ -127,6 +123,7 @@ enum SortingMessage {
     UserPressedTagButton(String),
     UserPressedRenameTag(String),
     UserPressedSubmitRenameTag,
+    UserPressedCancelRenameTag,
     UserEditTagName(String),
     UserPressedTagMenu(Option<String>),
     ImagePreloaded(String, ImageData),
@@ -231,6 +228,7 @@ enum Effect {
     PreloadImages(Vec<String>),
     GoToSorting,
     MoveImagesWithTag(String),
+    FocusElement(widget::text_input::Id),
 }
 
 impl Model {
@@ -315,7 +313,6 @@ impl Model {
                 // Taglist combobox
                 let all_tags = find_all_tags(sorting.pathlist.paths.as_slice());
                 sorting.taglist_combobox_state = widget::combo_box::State::new(all_tags);
-                sorting.selected_tag = None;
             }
 
             _ => {
@@ -324,7 +321,6 @@ impl Model {
                 self.state = ModelState::Sorting(SortingModel {
                     pathlist: PathList::new(paths.clone()),
                     preload_list,
-                    selected_tag: None,
                     taglist_combobox_state: widget::combo_box::State::default(),
                     expanded_dropdown: None,
                     editing_tag_name: None,
@@ -334,7 +330,6 @@ impl Model {
                         ("e".to_owned(), "Yellow".to_owned()),
                         ("u".to_owned(), "Blue".to_owned()),
                     ]),
-                    is_typing_action: false,
                 });
             }
         }
@@ -467,7 +462,7 @@ impl Model {
 
                 Effect::None
             }
-            SortingMessage::KeyboardEvent(_) if model.is_typing_action => Effect::None,
+            SortingMessage::KeyboardEvent(_) if is_typing_action(&model) => Effect::None,
             SortingMessage::KeyboardEvent(event) => match event {
                 iced::keyboard::Event::KeyPressed { key, modifiers, .. } => match key.as_ref() {
                     iced::keyboard::Key::Character("h") => user_pressed_previous_image(model),
@@ -496,15 +491,17 @@ impl Model {
                 Effect::None
             }
             SortingMessage::UserPressedRenameTag(tag) => {
-                model.selected_tag = None;
-                model.editing_tag_name = Some((tag, "".to_owned()));
+                let id = widget::text_input::Id::unique();
+                model.editing_tag_name = Some((tag, "".to_owned(), id.clone()));
                 model.expanded_dropdown = None;
-                Effect::None
+                Effect::FocusElement(id)
             }
             SortingMessage::UserPressedSubmitRenameTag => {
-                model.selected_tag = None;
-                let (tag, new_tag_name) = model.editing_tag_name.take().unwrap();
+                let (tag, new_tag_name, _) = model.editing_tag_name.take().unwrap();
                 model.tag_names.insert(tag, new_tag_name);
+                Effect::None
+            }
+            SortingMessage::UserPressedCancelRenameTag => {
                 model.editing_tag_name = None;
                 Effect::None
             }
@@ -671,18 +668,42 @@ impl Model {
 
         let content = center(content);
 
-        let popup = model.editing_tag_name.as_ref().map(|(_, text)| {
-            widget::text_input("tag name", text)
-                .on_input(|text| Message::SortingMessage(SortingMessage::UserEditTagName(text)))
-                .on_submit(Message::SortingMessage(
-                    SortingMessage::UserPressedSubmitRenameTag,
-                ))
-        });
+        let popup = model
+            .editing_tag_name
+            .as_ref()
+            .map(|(_, text, id)| view_rename_tag_modal(text.as_str(), id.clone()));
 
         let stack = widget::Stack::new().push(content).push_maybe(popup);
 
         stack.into()
     }
+}
+
+fn is_typing_action(model: &SortingModel) -> bool {
+    model.editing_tag_name.is_some()
+}
+
+fn view_rename_tag_modal(text: &str, id: widget::text_input::Id) -> Element<Message> {
+    let input = widget::text_input("tag name", text)
+        .on_input(|text| Message::SortingMessage(SortingMessage::UserEditTagName(text)))
+        .on_submit(Message::SortingMessage(
+            SortingMessage::UserPressedSubmitRenameTag,
+        ))
+        .id(id.clone());
+
+    let submit = button("Submit").on_press(Message::SortingMessage(
+        SortingMessage::UserPressedSubmitRenameTag,
+    ));
+
+    let cancel = button("Cancel").on_press(Message::SortingMessage(
+        SortingMessage::UserPressedCancelRenameTag,
+    ));
+
+    column![input, row![submit, cancel,]]
+        .spacing(20)
+        .spacing(10)
+        .padding(50)
+        .into()
 }
 
 fn view_tag_button_row<'a>(
@@ -968,6 +989,7 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
                     .then(|()| ls_dir_task(PICTURE_DIR.to_owned()))
             }
         }
+        Effect::FocusElement(id) => widget::text_input::focus(id),
     }
 }
 
