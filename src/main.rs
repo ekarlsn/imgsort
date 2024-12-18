@@ -422,6 +422,7 @@ impl Model {
         }
     }
 
+    #[allow(clippy::manual_inspect)]
     fn update_sorting_model(model: &mut SortingModel, message: SortingMessage) -> Effect {
         match message {
             SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
