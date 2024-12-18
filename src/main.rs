@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use iced::event::{self, Event};
-use iced::widget::{self, center, column, row, text};
+use iced::widget::{self, center, column, row, stack};
 use iced::{Color, Element, Length, Subscription, Task};
 use iced_aw::{drop_down, DropDown};
 use image::ImageReader;
@@ -516,7 +516,7 @@ impl Model {
     fn view(&self) -> Element<Message> {
         match &self.state {
             ModelState::Sorting(model) => Model::view_sorting_model(model),
-            ModelState::LoadingListDir => text("Loading...").into(),
+            ModelState::LoadingListDir => widget::text("Loading...").into(),
             ModelState::Settings(settings_model) => Model::view_settings_model(settings_model),
         }
     }
@@ -540,29 +540,29 @@ impl Model {
             .unwrap();
 
         column![
-            text("Settings"),
+            widget::text("Settings"),
             row![
-                text("Preload back"),
+                widget::text("Preload back"),
                 widget::text_input("Preload back", preload_back_text)
                     .id("preload_back_num")
                     .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
                         SettingsFieldName::PreloadBackNum,
                         text
                     ))),
-                text(preload_back_error)
+                widget::text(preload_back_error)
             ],
             row![
-                text("Preload front"),
+                widget::text("Preload front"),
                 widget::text_input("Preload front", preload_front_text)
                     .id("preload_front_num")
                     .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
                         SettingsFieldName::PreloadFrontNum,
                         text
                     ))),
-                text(preload_front_error),
+                widget::text(preload_front_error),
             ],
             row![
-                text("Scale down size WxH"),
+                widget::text("Scale down size WxH"),
                 widget::text_input("Width", scale_down_width_text)
                     .id("scale_down_size_width")
                     .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
@@ -586,24 +586,9 @@ impl Model {
     }
 
     fn view_sorting_model(model: &SortingModel) -> Element<Message> {
-        let image: Element<_> = match model.pathlist.current_image() {
-            PreloadImage::Loaded(image) => column![
-                view_image(image),
-                text(format!(
-                    "({index}/{total}) {path}",
-                    index = model.pathlist.index + 1,
-                    total = model.pathlist.paths.len(),
-                    path = model.pathlist.current().path,
-                )),
-            ]
-            .into(),
-            PreloadImage::Loading(path) => text(format!("Loading {path}...")).into(),
-            PreloadImage::OutOfRange => text("Out of range").into(),
-        };
+        let image = view_image(model);
 
         let preload_status_string = preload_list_status_string_pathlist(&model.pathlist);
-
-        let tag = model.pathlist.current().metadata.tag.clone();
 
         let mut tag_count = HashMap::new();
 
@@ -621,10 +606,6 @@ impl Model {
         );
         let content = column![
             image,
-            match tag {
-                Some(tag) => text(format!("Tag: [{tag}]")),
-                None => text("No tag"),
-            },
             tag_buttons,
             row![
                 button("<- Previous")
@@ -632,7 +613,7 @@ impl Model {
                 button("Next ->").on_press(Message::Sorting(SortingMessage::UserPressedNextImage)),
                 button("Settings").on_press(Message::UserPressedGoToSettings),
             ],
-            text(preload_status_string),
+            widget::text(preload_status_string),
         ];
 
         let content = center(content);
@@ -645,6 +626,45 @@ impl Model {
         let stack = widget::Stack::new().push(content).push_maybe(popup);
 
         stack.into()
+    }
+}
+
+struct TagColors {
+    red: Color,
+    green: Color,
+    yellow: Color,
+    blue: Color,
+    other: Color,
+}
+
+const TAG_COLORS: TagColors = TagColors {
+    red: Color::from_rgb(1.0, 0.0, 0.0),
+    green: Color::from_rgb(0.0, 0.6, 0.0),
+    yellow: Color::from_rgb(0.8, 0.8, 0.0),
+    blue: Color::from_rgb(0.0, 0.0, 1.0),
+    other: Color::from_rgb(0.5, 0.5, 0.5),
+};
+
+fn tag_badge_color(tag: &str) -> iced::Color {
+    match tag {
+        "a" => TAG_COLORS.red,
+        "o" => TAG_COLORS.green,
+        "e" => TAG_COLORS.yellow,
+        "u" => TAG_COLORS.blue,
+        _ => TAG_COLORS.other,
+    }
+}
+
+fn view_image(model: &SortingModel) -> Element<Message> {
+    let name_and_color = model.pathlist.current().metadata.tag.as_ref().map(|tag| {
+        let name = model.tag_names.get(tag).unwrap_or(tag);
+        let color = tag_badge_color(tag);
+        (name.to_owned(), color)
+    });
+    match model.pathlist.current_image() {
+        PreloadImage::Loaded(image) => view_loaded_image(image, &model.pathlist, name_and_color),
+        PreloadImage::Loading(path) => widget::text(format!("Loading {path}...")).into(),
+        PreloadImage::OutOfRange => widget::text("Out of range").into(),
     }
 }
 
@@ -986,13 +1006,41 @@ fn preload_image(path: String, config: Config) -> (String, ImageData) {
     (path, image)
 }
 
-fn view_image(image: &ImageData) -> Element<Message> {
-    iced::widget::image::viewer(widget::image::Handle::from_rgba(
+fn view_loaded_image<'a>(
+    image: &'a ImageData,
+    pathlist: &'a PathList,
+    name_and_color: Option<(String, iced::Color)>,
+) -> Element<'a, Message> {
+    let img = iced::widget::image::viewer(widget::image::Handle::from_rgba(
         image.width,
         image.height,
         image.data.clone(),
-    ))
-    .into()
+    ));
+
+    let status_text = widget::text(format!(
+        "({index}/{total}) {path}",
+        index = pathlist.index + 1,
+        total = pathlist.paths.len(),
+        path = pathlist.current().path,
+    ));
+
+    let badge: Option<Element<Message>> = name_and_color.map(|(name, mut color)| {
+        color.a = 0.75;
+        widget::container(widget::text(name))
+            .padding(10)
+            .style(move |_: &iced::Theme| widget::container::Style {
+                background: Some(iced::Background::Color(color)),
+                border: iced::border::rounded(10.0),
+                text_color: Some(Color::WHITE),
+                ..widget::container::Style::default()
+            })
+            .into()
+    });
+
+    let image_with_badge = stack![img];
+    let image_with_badge = image_with_badge.push_maybe(badge);
+
+    column![image_with_badge, status_text].into()
 }
 
 fn button(text: &str) -> widget::Button<'_, Message> {
