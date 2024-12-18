@@ -9,8 +9,12 @@ Run it in the folder you want to sort images
 
 ## TODO
 
+- [x] Nice colored tags
+- [x] Don't separate pathlist and preload_list. Keep it in one structure
 - [ ] Thumbnails
-- [ ] Nice colored tags
-- [ ] Don't separate pathlist and preload_list. Keep it in one structure
 - [ ] Failure handling when images can't be moved
+- [ ] Failure handling when images can't be loaded
 - [ ] Tabbed view, with iced_aw tabbed widget
+- [ ] Fix crash when opened in empty dir
+- [ ] Navigate folders
+- [ ] Less yank after moving images
