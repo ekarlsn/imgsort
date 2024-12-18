@@ -110,8 +110,8 @@ enum Message {
     UserPressedGoToSorting,
     ListDirCompleted(Vec<String>),
     KeyboardEventOccurred(iced::keyboard::Event),
-    SettingsMessage(SettingsMessage),
-    SortingMessage(SortingMessage),
+    Settings(SettingsMessage),
+    Sorting(SortingMessage),
 }
 
 #[derive(Debug, Clone)]
@@ -177,8 +177,7 @@ impl PathList {
         self.paths
             .iter()
             .find(|info| info.path == path)
-            .map(|info| info.metadata.tag.clone())
-            .flatten()
+            .and_then(|info| info.metadata.tag.clone())
     }
 
     fn current_image(&self) -> &PreloadImage {
@@ -315,7 +314,7 @@ impl Model {
     }
 
     fn title(&self) -> String {
-        format!("ImageViewer")
+        "ImageViewer".to_owned()
     }
 
     fn update_with_task(&mut self, message: Message) -> Task<Message> {
@@ -326,27 +325,24 @@ impl Model {
         debug!("Message: {:?}", message);
         let effect = match message {
             Message::UserPressedGoToSettings => {
-                let fields = HashMap::from_iter(
-                    [
-                        (
-                            SettingsFieldName::PreloadBackNum,
-                            (self.config.preload_back_num.to_string(), "".to_owned()),
-                        ),
-                        (
-                            SettingsFieldName::PreloadFrontNum,
-                            (self.config.preload_front_num.to_string(), "".to_owned()),
-                        ),
-                        (
-                            SettingsFieldName::ScaleDownSizeWidth,
-                            (self.config.scale_down_size.0.to_string(), "".to_owned()),
-                        ),
-                        (
-                            SettingsFieldName::ScaleDownSizeHeight,
-                            (self.config.scale_down_size.1.to_string(), "".to_owned()),
-                        ),
-                    ]
-                    .into_iter(),
-                );
+                let fields = HashMap::from_iter([
+                    (
+                        SettingsFieldName::PreloadBackNum,
+                        (self.config.preload_back_num.to_string(), "".to_owned()),
+                    ),
+                    (
+                        SettingsFieldName::PreloadFrontNum,
+                        (self.config.preload_front_num.to_string(), "".to_owned()),
+                    ),
+                    (
+                        SettingsFieldName::ScaleDownSizeWidth,
+                        (self.config.scale_down_size.0.to_string(), "".to_owned()),
+                    ),
+                    (
+                        SettingsFieldName::ScaleDownSizeHeight,
+                        (self.config.scale_down_size.1.to_string(), "".to_owned()),
+                    ),
+                ]);
                 self.state = ModelState::Settings(SettingsModel { fields });
                 Effect::None
             }
@@ -361,11 +357,11 @@ impl Model {
                 }
                 _ => Effect::None,
             },
-            Message::SortingMessage(sorting_message) => match &mut self.state {
+            Message::Sorting(sorting_message) => match &mut self.state {
                 ModelState::Sorting(model) => Model::update_sorting_model(model, sorting_message),
                 _ => Effect::None,
             },
-            Message::SettingsMessage(settings_message) => match &mut self.state {
+            Message::Settings(settings_message) => match &mut self.state {
                 ModelState::Settings(settings_model) => {
                     Model::update_settings_model(settings_model, settings_message, &mut self.config)
                 }
@@ -444,7 +440,7 @@ impl Model {
 
                 Effect::None
             }
-            SortingMessage::KeyboardEvent(_) if is_typing_action(&model) => Effect::None,
+            SortingMessage::KeyboardEvent(_) if is_typing_action(model) => Effect::None,
             SortingMessage::KeyboardEvent(event) => match event {
                 iced::keyboard::Event::KeyPressed { key, modifiers, .. } => match key.as_ref() {
                     iced::keyboard::Key::Character("h")
@@ -548,51 +544,42 @@ impl Model {
                 text("Preload back"),
                 widget::text_input("Preload back", preload_back_text)
                     .id("preload_back_num")
-                    .on_input(
-                        |text| Message::SettingsMessage(SettingsMessage::UserUpdatedField(
-                            SettingsFieldName::PreloadBackNum,
-                            text
-                        ))
-                    ),
+                    .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
+                        SettingsFieldName::PreloadBackNum,
+                        text
+                    ))),
                 text(preload_back_error)
             ],
             row![
                 text("Preload front"),
                 widget::text_input("Preload front", preload_front_text)
                     .id("preload_front_num")
-                    .on_input(
-                        |text| Message::SettingsMessage(SettingsMessage::UserUpdatedField(
-                            SettingsFieldName::PreloadFrontNum,
-                            text
-                        ))
-                    ),
+                    .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
+                        SettingsFieldName::PreloadFrontNum,
+                        text
+                    ))),
                 text(preload_front_error),
             ],
             row![
                 text("Scale down size WxH"),
                 widget::text_input("Width", scale_down_width_text)
                     .id("scale_down_size_width")
-                    .on_input(
-                        |text| Message::SettingsMessage(SettingsMessage::UserUpdatedField(
-                            SettingsFieldName::ScaleDownSizeWidth,
-                            text
-                        ))
-                    ),
+                    .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
+                        SettingsFieldName::ScaleDownSizeWidth,
+                        text
+                    ))),
                 widget::text(scale_down_width_error),
                 widget::text_input("Height", scale_down_height_text)
                     .id("scale_down_size_height")
-                    .on_input(
-                        |text| Message::SettingsMessage(SettingsMessage::UserUpdatedField(
-                            SettingsFieldName::ScaleDownSizeHeight,
-                            text
-                        ))
-                    ),
+                    .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
+                        SettingsFieldName::ScaleDownSizeHeight,
+                        text
+                    ))),
                 widget::text(scale_down_height_error),
             ],
-            button("Back to sorting").on_press(Message::SettingsMessage(
-                SettingsMessage::UserPressedBackToSorting,
-            )),
-            button("Save").on_press(Message::SettingsMessage(SettingsMessage::Save,)),
+            button("Back to sorting")
+                .on_press(Message::Settings(SettingsMessage::UserPressedBackToSorting,)),
+            button("Save").on_press(Message::Settings(SettingsMessage::Save,)),
         ]
         .into()
     }
@@ -600,7 +587,7 @@ impl Model {
     fn view_sorting_model(model: &SortingModel) -> Element<Message> {
         let image: Element<_> = match model.pathlist.current_image() {
             PreloadImage::Loaded(image) => column![
-                view_image(&image),
+                view_image(image),
                 text(format!(
                     "({index}/{total}) {path}",
                     index = model.pathlist.index + 1,
@@ -639,12 +626,9 @@ impl Model {
             },
             tag_buttons,
             row![
-                button("<- Previous").on_press(Message::SortingMessage(
-                    SortingMessage::UserPressedPreviousImage
-                )),
-                button("Next ->").on_press(Message::SortingMessage(
-                    SortingMessage::UserPressedNextImage
-                )),
+                button("<- Previous")
+                    .on_press(Message::Sorting(SortingMessage::UserPressedPreviousImage)),
+                button("Next ->").on_press(Message::Sorting(SortingMessage::UserPressedNextImage)),
                 button("Settings").on_press(Message::UserPressedGoToSettings),
             ],
             text(preload_status_string),
@@ -669,19 +653,15 @@ fn is_typing_action(model: &SortingModel) -> bool {
 
 fn view_rename_tag_modal(text: &str, id: widget::text_input::Id) -> Element<Message> {
     let input = widget::text_input("tag name", text)
-        .on_input(|text| Message::SortingMessage(SortingMessage::UserEditTagName(text)))
-        .on_submit(Message::SortingMessage(
-            SortingMessage::UserPressedSubmitRenameTag,
-        ))
+        .on_input(|text| Message::Sorting(SortingMessage::UserEditTagName(text)))
+        .on_submit(Message::Sorting(SortingMessage::UserPressedSubmitRenameTag))
         .id(id.clone());
 
-    let submit = button("Submit").on_press(Message::SortingMessage(
-        SortingMessage::UserPressedSubmitRenameTag,
-    ));
+    let submit =
+        button("Submit").on_press(Message::Sorting(SortingMessage::UserPressedSubmitRenameTag));
 
-    let cancel = button("Cancel").on_press(Message::SortingMessage(
-        SortingMessage::UserPressedCancelRenameTag,
-    ));
+    let cancel =
+        button("Cancel").on_press(Message::Sorting(SortingMessage::UserPressedCancelRenameTag));
 
     column![input, row![submit, cancel,]]
         .spacing(20)
@@ -759,37 +739,33 @@ fn view_tag_button<'a>(
         border: iced::Border::default(),
         shadow: iced::Shadow::default(),
     };
-    let style_hovered = style
-        .clone()
-        .with_background(iced::Background::Color(hover_bg));
+    let style_hovered = style.with_background(iced::Background::Color(hover_bg));
 
-    let style_pressed = style
-        .clone()
-        .with_background(iced::Background::Color(press_bg));
+    let style_pressed = style.with_background(iced::Background::Color(press_bg));
 
     let tag_button = widget::Button::new(widget::text!("{text} ({num})"))
         .style(move |_, status| match &status {
-            widget::button::Status::Active => style.clone(),
+            widget::button::Status::Active => style,
             widget::button::Status::Hovered => style_hovered,
             widget::button::Status::Pressed => style_pressed,
             widget::button::Status::Disabled => style,
         })
-        .on_press(Message::SortingMessage(
-            SortingMessage::UserPressedTagButton(tag.to_owned()),
-        ))
+        .on_press(Message::Sorting(SortingMessage::UserPressedTagButton(
+            tag.to_owned(),
+        )))
         .width(350)
         .height(40);
 
     let more_button = widget::button("...")
         .style(move |_, status| match &status {
-            widget::button::Status::Active => style.clone(),
+            widget::button::Status::Active => style,
             widget::button::Status::Hovered => style_hovered,
             widget::button::Status::Pressed => style_pressed,
             widget::button::Status::Disabled => style,
         })
-        .on_press(Message::SortingMessage(SortingMessage::UserPressedTagMenu(
-            Some(tag.to_owned()),
-        )))
+        .on_press(Message::Sorting(SortingMessage::UserPressedTagMenu(Some(
+            tag.to_owned(),
+        ))))
         .width(45)
         .height(40);
 
@@ -803,9 +779,7 @@ fn view_tag_button<'a>(
 
     let drop_down_button = DropDown::new(more_button, drop_down_menu, expanded)
         .alignment(drop_down::Alignment::Top)
-        .on_dismiss(Message::SortingMessage(SortingMessage::UserPressedTagMenu(
-            None,
-        )))
+        .on_dismiss(Message::Sorting(SortingMessage::UserPressedTagMenu(None)))
         .width(Length::Fill);
 
     row![tag_button, drop_down_button].into()
@@ -813,7 +787,7 @@ fn view_tag_button<'a>(
 
 fn tag_dropdown_button(text: &str, message: SortingMessage) -> Element<Message> {
     button(text)
-        .on_press(Message::SortingMessage(message))
+        .on_press(Message::Sorting(message))
         .width(250)
         .into()
 }
@@ -846,7 +820,7 @@ fn user_pressed_previous_image(model: &mut SortingModel) -> Effect {
         return Effect::None;
     }
 
-    model.pathlist.index = model.pathlist.index - 1;
+    model.pathlist.index -= 1;
 
     if model.pathlist.index >= model.pathlist.preload_back_num {
         let new_preload_index =
@@ -865,7 +839,7 @@ fn user_pressed_next_image(model: &mut SortingModel) -> Effect {
         return Effect::None;
     }
 
-    model.pathlist.index = model.pathlist.index + 1;
+    model.pathlist.index += 1;
     if model.pathlist.paths.len() > model.pathlist.index + model.pathlist.preload_front_num {
         let new_preload_index =
             (model.pathlist.index as isize + model.pathlist.preload_front_num as isize) as usize;
@@ -886,18 +860,17 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
         Effect::MoveImagesWithTag(tag) => {
             let (files_to_move, tag_name) = {
                 let mut files_to_move = Vec::new();
-                let tag_name;
-                match &model.state {
+                let tag_name = match &model.state {
                     ModelState::Sorting(sorting) => {
                         for info in &sorting.pathlist.paths {
                             if info.metadata.tag == Some(tag.clone()) {
                                 files_to_move.push(info.path.clone());
                             }
                         }
-                        tag_name = sorting.tag_names.get(&tag).unwrap_or(&tag).clone();
+                        sorting.tag_names.get(&tag).unwrap_or(&tag).clone()
                     }
                     _ => panic!("MoveImages effect should only be called in the sorting state"),
-                }
+                };
                 (files_to_move, tag_name)
             };
             if files_to_move.is_empty() {
@@ -982,10 +955,8 @@ fn preload_images_task(paths: Vec<String>, config: Config) -> Task<Message> {
         let config2 = config.clone();
         let fut = tokio::task::spawn_blocking(move || preload_image(path, config2));
         tasks.push(Task::perform(fut, |res| match res {
-            Ok((path4, image)) => {
-                Message::SortingMessage(SortingMessage::ImagePreloaded(path4, image))
-            }
-            Err(_) => Message::SortingMessage(SortingMessage::ImagePreloadFailed(
+            Ok((path4, image)) => Message::Sorting(SortingMessage::ImagePreloaded(path4, image)),
+            Err(_) => Message::Sorting(SortingMessage::ImagePreloadFailed(
                 "too hard to know".to_owned(),
             )),
         }))
