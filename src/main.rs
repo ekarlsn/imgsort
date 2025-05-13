@@ -179,13 +179,20 @@ impl PathList {
             .find(|info| info.path == path)
             .and_then(|info| info.metadata.tag.clone())
     }
-
-    fn current_image(&self) -> &PreloadImage {
-        &self.paths[self.index].data
+    fn prev(&self) -> Option<&ImageInfo> {
+        if self.index == 0 {
+            None
+        } else {
+            Some(&self.paths[self.index - 1])
+        }
     }
 
     fn current(&self) -> &ImageInfo {
         &self.paths[self.index]
+    }
+
+    fn next(&self) -> Option<&ImageInfo> {
+        self.paths.get(self.index + 1)
     }
 
     fn current_mut(&mut self) -> &mut ImageInfo {
@@ -586,7 +593,19 @@ impl Model {
     }
 
     fn view_sorting_model(model: &SortingModel) -> Element<Message> {
-        let image = view_image(model);
+        let prev_image = model
+            .pathlist
+            .prev()
+            .map(|image| view_image(image, &model.tag_names, Some(100)))
+            .unwrap_or(widget::text("No previous image").into());
+
+        let image = view_image(model.pathlist.current(), &model.tag_names, None);
+
+        let next_image = model
+            .pathlist
+            .next()
+            .map(|image| view_image(image, &model.tag_names, Some(100)))
+            .unwrap_or(widget::text("No next image").into());
 
         let preload_status_string = preload_list_status_string_pathlist(&model.pathlist);
 
@@ -599,20 +618,31 @@ impl Model {
             }
         }
 
+        let status_text = widget::text(format!(
+            "({index}/{total}) {path}",
+            index = model.pathlist.index + 1,
+            total = model.pathlist.paths.len(),
+            path = model.pathlist.current().path,
+        ));
+
         let tag_buttons = view_tag_button_row(
             model.expanded_dropdown.as_ref().unwrap_or(&"".to_owned()),
             &model.tag_names,
             &tag_count,
         );
+
+        let action_buttons = row![
+            button("<- Previous")
+                .on_press(Message::Sorting(SortingMessage::UserPressedPreviousImage)),
+            button("Next ->").on_press(Message::Sorting(SortingMessage::UserPressedNextImage)),
+            button("Settings").on_press(Message::UserPressedGoToSettings),
+        ];
+
         let content = column![
-            image,
+            row![prev_image, image, next_image,],
+            status_text,
             tag_buttons,
-            row![
-                button("<- Previous")
-                    .on_press(Message::Sorting(SortingMessage::UserPressedPreviousImage)),
-                button("Next ->").on_press(Message::Sorting(SortingMessage::UserPressedNextImage)),
-                button("Settings").on_press(Message::UserPressedGoToSettings),
-            ],
+            action_buttons,
             widget::text(preload_status_string),
         ];
 
@@ -623,9 +653,7 @@ impl Model {
             .as_ref()
             .map(|(_, text, id)| view_rename_tag_modal(text.as_str(), id.clone()));
 
-        let stack = widget::Stack::new().push(content).push_maybe(popup);
-
-        stack.into()
+        stack![content].push_maybe(popup).into()
     }
 }
 
@@ -655,14 +683,18 @@ fn tag_badge_color(tag: &str) -> iced::Color {
     }
 }
 
-fn view_image(model: &SortingModel) -> Element<Message> {
-    let name_and_color = model.pathlist.current().metadata.tag.as_ref().map(|tag| {
-        let name = model.tag_names.get(tag).unwrap_or(tag);
+fn view_image<'a>(
+    image: &'a ImageInfo,
+    tag_names: &HashMap<String, String>,
+    width: Option<i32>,
+) -> Element<'a, Message> {
+    let name_and_color = image.metadata.tag.as_ref().map(|tag| {
+        let name = tag_names.get(tag).unwrap_or(tag);
         let color = tag_badge_color(tag);
         (name.to_owned(), color)
     });
-    match model.pathlist.current_image() {
-        PreloadImage::Loaded(image) => view_loaded_image(image, &model.pathlist, name_and_color),
+    match &image.data {
+        PreloadImage::Loaded(image) => view_loaded_image(image, name_and_color, width),
         PreloadImage::Loading(path) => widget::text(format!("Loading {path}...")).into(),
         PreloadImage::OutOfRange => widget::text("Out of range").into(),
     }
@@ -1006,23 +1038,20 @@ fn preload_image(path: String, config: Config) -> (String, ImageData) {
     (path, image)
 }
 
-fn view_loaded_image<'a>(
-    image: &'a ImageData,
-    pathlist: &'a PathList,
+fn view_loaded_image(
+    image: &ImageData,
     name_and_color: Option<(String, iced::Color)>,
-) -> Element<'a, Message> {
-    let img = iced::widget::image::viewer(widget::image::Handle::from_rgba(
+    width: Option<i32>,
+) -> Element<Message> {
+    let mut img = iced::widget::image::viewer(widget::image::Handle::from_rgba(
         image.width,
         image.height,
         image.data.clone(),
     ));
-
-    let status_text = widget::text(format!(
-        "({index}/{total}) {path}",
-        index = pathlist.index + 1,
-        total = pathlist.paths.len(),
-        path = pathlist.current().path,
-    ));
+    if let Some(_) = width {
+        // TODO Actually use the width here
+        img = img.width(100);
+    }
 
     let badge: Option<Element<Message>> = name_and_color.map(|(name, mut color)| {
         color.a = 0.75;
@@ -1037,10 +1066,7 @@ fn view_loaded_image<'a>(
             .into()
     });
 
-    let image_with_badge = stack![img];
-    let image_with_badge = image_with_badge.push_maybe(badge);
-
-    column![image_with_badge, status_text].into()
+    stack![img].push_maybe(badge).into()
 }
 
 fn button(text: &str) -> widget::Button<'_, Message> {
