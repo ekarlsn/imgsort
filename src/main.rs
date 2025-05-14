@@ -41,6 +41,7 @@ struct Model {
 #[derive(Debug)]
 enum ModelState {
     LoadingListDir,
+    EmptyDirectory,
     Sorting(SortingModel),
     Settings(SettingsModel),
 }
@@ -108,6 +109,7 @@ impl std::fmt::Debug for ImageData {
 enum Message {
     UserPressedGoToSettings,
     UserPressedGoToSorting,
+    UserPressedSelectFolder,
     ListDirCompleted(Vec<String>),
     KeyboardEventOccurred(iced::keyboard::Event),
     Settings(SettingsMessage),
@@ -357,7 +359,15 @@ impl Model {
                 self.state = ModelState::LoadingListDir;
                 Effect::LsDir
             }
-            Message::ListDirCompleted(paths) => self.go_to_sorting_model(paths),
+            Message::UserPressedSelectFolder => Effect::None,
+            Message::ListDirCompleted(paths) => {
+                if paths.is_empty() {
+                    self.state = ModelState::EmptyDirectory;
+                    Effect::None
+                } else {
+                    self.go_to_sorting_model(paths)
+                }
+            }
             Message::KeyboardEventOccurred(event) => match &mut self.state {
                 ModelState::Sorting(model) => {
                     Model::update_sorting_model(model, SortingMessage::KeyboardEvent(event))
@@ -524,8 +534,16 @@ impl Model {
         match &self.state {
             ModelState::Sorting(model) => Model::view_sorting_model(model),
             ModelState::LoadingListDir => widget::text("Loading...").into(),
+            ModelState::EmptyDirectory => Model::view_empty_dir_model(),
             ModelState::Settings(settings_model) => Model::view_settings_model(settings_model),
         }
+    }
+    fn view_empty_dir_model() -> Element<'static, Message> {
+        column![
+            widget::text("No pictures in this directory, select another one"),
+            button("Select Folder").on_press(Message::UserPressedSelectFolder),
+        ]
+        .into()
     }
 
     fn view_settings_model(model: &SettingsModel) -> Element<Message> {
@@ -636,6 +654,7 @@ impl Model {
                 .on_press(Message::Sorting(SortingMessage::UserPressedPreviousImage)),
             button("Next ->").on_press(Message::Sorting(SortingMessage::UserPressedNextImage)),
             button("Settings").on_press(Message::UserPressedGoToSettings),
+            button("Select Folder").on_press(Message::UserPressedSelectFolder),
         ];
 
         let content = column![

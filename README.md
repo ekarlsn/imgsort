@@ -15,6 +15,6 @@ Run it in the folder you want to sort images
 - [ ] Failure handling when images can't be moved
 - [ ] Failure handling when images can't be loaded
 - [ ] Tabbed view, with iced_aw tabbed widget
-- [ ] Fix crash when opened in empty dir
+- [x] Fix crash when opened in empty dir
 - [ ] Navigate folders
 - [ ] Less yank after moving images
