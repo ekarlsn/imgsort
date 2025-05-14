@@ -32,3 +32,5 @@ simplelog = { version = "0.12.2", features = ["paris"] }
 tokio = { version = "1.41.1", features = ["full"] }
 webpki-roots = { version = "0.26.0-alpha.2" }
 tokio-macros = { version = "0.2.0-alpha.6" }
+clap = { version = "4.5.38", features = ["derive"] }
+rfd = "0.15.3"
