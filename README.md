@@ -11,10 +11,20 @@ Run it in the folder you want to sort images
 
 - [x] Nice colored tags
 - [x] Don't separate pathlist and preload_list. Keep it in one structure
-- [ ] Thumbnails
+- [x] Thumbnails
+- [x] Fix crash when opened in empty dir
+- [x] Picture placeholder the same size as a picture
+- [ ] Internationalize
+- [ ] Navigate folders
+- [ ] Preload current image first
+- [ ] Save settings persistently
+- [ ] Nicer config screen
+- [ ] Config for thumbnails, size, above/below/side, amount
+- [ ] Config for shortcuts
+- [ ] Thumbnails adjust to screen size
+- [ ] Size detection
+- [ ] Tabbed view, with iced_aw tabbed widget
+- [ ] Don't create log file by default
+- [ ] Less yank after moving images
 - [ ] Failure handling when images can't be moved
 - [ ] Failure handling when images can't be loaded
-- [ ] Tabbed view, with iced_aw tabbed widget
-- [x] Fix crash when opened in empty dir
-- [ ] Navigate folders
-- [ ] Less yank after moving images

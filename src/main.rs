@@ -1,3 +1,4 @@
+use clap::Parser;
 use std::collections::HashMap;
 
 use iced::event::{self, Event};
@@ -9,6 +10,12 @@ use log::debug;
 
 const TAGGING_CHARS: &str = "aoeupy";
 const PICTURE_DIR: &str = ".";
+
+#[derive(Parser)]
+struct Args {
+    #[arg(default_value = ".")]
+    input_dir: String,
+}
 
 pub fn main() -> iced::Result {
     simplelog::CombinedLogger::init(vec![
@@ -27,6 +34,14 @@ pub fn main() -> iced::Result {
         ),
     ])
     .unwrap();
+
+    let args = Args::parse();
+
+    if std::env::set_current_dir(&args.input_dir).is_err() {
+        println!("Error opening directory {}", args.input_dir);
+        std::process::exit(1);
+    }
+
     iced::application(Model::title, Model::update_with_task, Model::view)
         .subscription(Model::subscription)
         .run_with(Model::new_with_task)
@@ -532,7 +547,7 @@ impl Model {
 
     fn view(&self) -> Element<Message> {
         match &self.state {
-            ModelState::Sorting(model) => Model::view_sorting_model(model),
+            ModelState::Sorting(model) => Model::view_sorting_model(model, &self.config),
             ModelState::LoadingListDir => widget::text("Loading...").into(),
             ModelState::EmptyDirectory => Model::view_empty_dir_model(),
             ModelState::Settings(settings_model) => Model::view_settings_model(settings_model),
@@ -610,20 +625,10 @@ impl Model {
         .into()
     }
 
-    fn view_sorting_model(model: &SortingModel) -> Element<Message> {
-        let prev_image = model
-            .pathlist
-            .prev()
-            .map(|image| view_image(image, &model.tag_names, Some(100)))
-            .unwrap_or(widget::text("No previous image").into());
+    fn view_sorting_model<'a>(model: &'a SortingModel, config: &'a Config) -> Element<'a, Message> {
+        let sorting_view_style = SortingViewStyle::Thumbnails;
 
-        let image = view_image(model.pathlist.current(), &model.tag_names, None);
-
-        let next_image = model
-            .pathlist
-            .next()
-            .map(|image| view_image(image, &model.tag_names, Some(100)))
-            .unwrap_or(widget::text("No next image").into());
+        let main_image_view = view_image_with_thumbs(sorting_view_style, model, config);
 
         let preload_status_string = preload_list_status_string_pathlist(&model.pathlist);
 
@@ -658,7 +663,7 @@ impl Model {
         ];
 
         let content = column![
-            row![prev_image, image, next_image,],
+            main_image_view,
             status_text,
             tag_buttons,
             action_buttons,
@@ -674,6 +679,81 @@ impl Model {
 
         stack![content].push_maybe(popup).into()
     }
+}
+
+enum SortingViewStyle {
+    Thumbnails,
+    BeforeAfter,
+}
+
+#[derive(Clone)]
+struct Dim {
+    width: u32,
+    height: u32,
+}
+
+fn view_image_with_thumbs<'a>(
+    sorting_view_style: SortingViewStyle,
+    model: &'a SortingModel,
+    config: &'a Config,
+) -> Element<'a, Message> {
+    let img_dim = Dim {
+        width: config.scale_down_size.0,
+        height: config.scale_down_size.1,
+    };
+    let thumbs_dim = Dim {
+        width: 100,
+        height: 100,
+    };
+    match sorting_view_style {
+        SortingViewStyle::BeforeAfter => {
+            let prev_image = model
+                .pathlist
+                .prev()
+                .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false))
+                .unwrap_or(placeholder_text("No previous image", &thumbs_dim).into());
+
+            let image = view_image(model.pathlist.current(), &model.tag_names, img_dim, false);
+
+            let next_image = model
+                .pathlist
+                .next()
+                .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false))
+                .unwrap_or(placeholder_text("No next image", &thumbs_dim).into());
+
+            row![prev_image, image, next_image].into()
+        }
+        SortingViewStyle::Thumbnails => {
+            let image = view_image(model.pathlist.current(), &model.tag_names, img_dim, false);
+
+            let num_thumbs = 3;
+            let mut thumbs = Vec::new();
+            for i in (model.pathlist.index as isize) - num_thumbs
+                ..=(model.pathlist.index as isize) + num_thumbs
+            {
+                let img = if i >= 0 && i < model.pathlist.paths.len() as isize {
+                    Some(&model.pathlist.paths[i as usize])
+                } else {
+                    None
+                };
+
+                let highlight = i == model.pathlist.index as isize;
+
+                let thumb = img
+                    .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), highlight))
+                    .unwrap_or(placeholder_text("No thumbnail", &thumbs_dim).into());
+                thumbs.push(thumb);
+            }
+
+            column![widget::Row::from_vec(thumbs), image].into()
+        }
+    }
+}
+
+fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a> {
+    widget::text(msg.as_ref().to_owned())
+        .width(dim.width as f32)
+        .height(dim.height as f32)
 }
 
 struct TagColors {
@@ -705,7 +785,8 @@ fn tag_badge_color(tag: &str) -> iced::Color {
 fn view_image<'a>(
     image: &'a ImageInfo,
     tag_names: &HashMap<String, String>,
-    width: Option<i32>,
+    dim: Dim,
+    highlight: bool,
 ) -> Element<'a, Message> {
     let name_and_color = image.metadata.tag.as_ref().map(|tag| {
         let name = tag_names.get(tag).unwrap_or(tag);
@@ -713,9 +794,9 @@ fn view_image<'a>(
         (name.to_owned(), color)
     });
     match &image.data {
-        PreloadImage::Loaded(image) => view_loaded_image(image, name_and_color, width),
-        PreloadImage::Loading(path) => widget::text(format!("Loading {path}...")).into(),
-        PreloadImage::OutOfRange => widget::text("Out of range").into(),
+        PreloadImage::Loaded(image) => view_loaded_image(image, name_and_color, dim, highlight),
+        PreloadImage::Loading(path) => placeholder_text(format!("Loading {path}..."), &dim).into(),
+        PreloadImage::OutOfRange => placeholder_text("Out of range", &dim).into(),
     }
 }
 
@@ -1060,17 +1141,29 @@ fn preload_image(path: String, config: Config) -> (String, ImageData) {
 fn view_loaded_image(
     image: &ImageData,
     name_and_color: Option<(String, iced::Color)>,
-    width: Option<i32>,
+    dim: Dim,
+    highlight: bool,
 ) -> Element<Message> {
     let mut img = iced::widget::image::viewer(widget::image::Handle::from_rgba(
         image.width,
         image.height,
         image.data.clone(),
     ));
-    if let Some(_) = width {
-        // TODO Actually use the width here
-        img = img.width(100);
-    }
+    img = img.width(dim.width as f32).height(dim.height as f32);
+
+    let image_with_border = if highlight {
+        widget::container(img)
+            .style(|_: &iced::Theme| {
+                widget::container::Style::default().border(iced::Border {
+                    radius: iced::border::radius(5),
+                    color: Color::from_rgb(0.0, 0.2, 0.8),
+                    width: 3.0,
+                })
+            })
+            .padding(3)
+    } else {
+        widget::container(img)
+    };
 
     let badge: Option<Element<Message>> = name_and_color.map(|(name, mut color)| {
         color.a = 0.75;
@@ -1085,7 +1178,7 @@ fn view_loaded_image(
             .into()
     });
 
-    stack![img].push_maybe(badge).into()
+    stack![image_with_border].push_maybe(badge).into()
 }
 
 fn button(text: &str) -> widget::Button<'_, Message> {
