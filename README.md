@@ -14,11 +14,13 @@ Run it in the folder you want to sort images
 - [x] Thumbnails
 - [x] Fix crash when opened in empty dir
 - [x] Picture placeholder the same size as a picture
+- [x] Preload current image first
 - [ ] Internationalize
 - [ ] Navigate folders
-- [ ] Preload current image first
-- [ ] Save settings persistently
+- [ ] Obvious UI
+    - Tooltips
 - [ ] Nicer config screen
+- [ ] Save settings persistently
 - [ ] Config for thumbnails, size, above/below/side, amount
 - [ ] Config for shortcuts
 - [ ] Thumbnails adjust to screen size

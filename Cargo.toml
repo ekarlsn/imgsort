@@ -34,3 +34,4 @@ webpki-roots = { version = "0.26.0-alpha.2" }
 tokio-macros = { version = "0.2.0-alpha.6" }
 clap = { version = "4.5.38", features = ["derive"] }
 rfd = "0.15.3"
+itertools = "0.14.0"

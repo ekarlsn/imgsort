@@ -1,4 +1,5 @@
 use clap::Parser;
+use itertools::Itertools;
 use std::collections::HashMap;
 
 use iced::event::{self, Event};
@@ -10,6 +11,8 @@ use log::debug;
 
 const TAGGING_CHARS: &str = "aoeupy";
 const PICTURE_DIR: &str = ".";
+const PRELOAD_IN_FLIGHT: usize = 8;
+const PRELOAD_CACHE_SIZE: usize = 100;
 
 #[derive(Parser)]
 struct Args {
@@ -180,10 +183,25 @@ impl PathList {
         }
     }
 
+    // Preload order?
+    // cache-size = 100, how many picture are kept in the list, when you scroll past preload limit
+    // back = 10, how many you start preloading backwards
+    // front = 30, how many you start preloading forwards
+    // in_flight = 8 (Or number of cores?), how many you preload at the same time
     fn get_initial_preload_images(&self) -> Vec<String> {
         let mut paths = Vec::new();
-        let from = self.index.saturating_sub(self.preload_back_num);
-        let to = usize::min(self.index + self.preload_front_num + 1, self.paths.len());
+        let from = self
+            .index
+            .saturating_sub(std::cmp::min(self.preload_back_num, PRELOAD_IN_FLIGHT / 2));
+        let to = *[
+            self.index + self.preload_front_num + 1,
+            self.paths.len(),
+            from + PRELOAD_IN_FLIGHT,
+        ]
+        .iter()
+        .min()
+        .expect("The iter is not emptyy");
+
         for i in from..to {
             paths.push(self.paths[i].path.clone());
         }
@@ -384,13 +402,17 @@ impl Model {
                 }
             }
             Message::KeyboardEventOccurred(event) => match &mut self.state {
-                ModelState::Sorting(model) => {
-                    Model::update_sorting_model(model, SortingMessage::KeyboardEvent(event))
-                }
+                ModelState::Sorting(model) => Model::update_sorting_model(
+                    model,
+                    SortingMessage::KeyboardEvent(event),
+                    &self.config,
+                ),
                 _ => Effect::None,
             },
             Message::Sorting(sorting_message) => match &mut self.state {
-                ModelState::Sorting(model) => Model::update_sorting_model(model, sorting_message),
+                ModelState::Sorting(model) => {
+                    Model::update_sorting_model(model, sorting_message, &self.config)
+                }
                 _ => Effect::None,
             },
             Message::Settings(settings_message) => match &mut self.state {
@@ -455,7 +477,11 @@ impl Model {
     }
 
     #[allow(clippy::manual_inspect)]
-    fn update_sorting_model(model: &mut SortingModel, message: SortingMessage) -> Effect {
+    fn update_sorting_model(
+        model: &mut SortingModel,
+        message: SortingMessage,
+        config: &Config,
+    ) -> Effect {
         match message {
             SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
             SortingMessage::UserPressedNextImage => user_pressed_next_image(model),
@@ -471,7 +497,7 @@ impl Model {
                         info
                     });
 
-                Effect::None
+                schedule_next_preload_image_after_one_finished(&model.pathlist, config)
             }
             SortingMessage::KeyboardEvent(_) if is_typing_action(model) => Effect::None,
             SortingMessage::KeyboardEvent(event) => match event {
@@ -750,6 +776,24 @@ fn view_image_with_thumbs<'a>(
     }
 }
 
+fn schedule_next_preload_image_after_one_finished(pathlist: &PathList, config: &Config) -> Effect {
+    let curr = pathlist.index;
+
+    let forward = pathlist.paths.iter().skip(curr);
+    let rev = pathlist
+        .paths
+        .iter()
+        .rev()
+        .skip(pathlist.paths.len() - curr);
+
+    for e in forward.interleave(rev) {
+        if matches!(e.data, PreloadImage::OutOfRange) {
+            return Effect::PreloadImages(vec![e.path.to_owned()]);
+        }
+    }
+    Effect::None
+}
+
 fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a> {
     widget::text(msg.as_ref().to_owned())
         .width(dim.width as f32)
@@ -979,8 +1023,12 @@ fn user_pressed_previous_image(model: &mut SortingModel) -> Effect {
         let new_preload_index =
             (model.pathlist.index as isize - model.pathlist.preload_back_num as isize) as usize;
         let info = &mut model.pathlist.paths[new_preload_index];
-        info.data = PreloadImage::Loading(info.path.clone());
-        Effect::PreloadImages(vec![info.path.clone()])
+        if matches!(info.data, PreloadImage::OutOfRange) {
+            info.data = PreloadImage::Loading(info.path.clone());
+            Effect::PreloadImages(vec![info.path.clone()])
+        } else {
+            Effect::None
+        }
     } else {
         Effect::None
     }
@@ -997,8 +1045,12 @@ fn user_pressed_next_image(model: &mut SortingModel) -> Effect {
         let new_preload_index =
             (model.pathlist.index as isize + model.pathlist.preload_front_num as isize) as usize;
         let info = &mut model.pathlist.paths[new_preload_index];
-        info.data = PreloadImage::Loading(info.path.clone());
-        Effect::PreloadImages(vec![info.path.clone()])
+        if matches!(info.data, PreloadImage::OutOfRange) {
+            info.data = PreloadImage::Loading(info.path.clone());
+            Effect::PreloadImages(vec![info.path.clone()])
+        } else {
+            Effect::None
+        }
     } else {
         Effect::None
     }
