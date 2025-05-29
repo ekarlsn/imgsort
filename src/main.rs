@@ -70,8 +70,8 @@ struct SortingModel {
 
     // Tags
     expanded_dropdown: Option<String>,
-    editing_tag_name: Option<(Tag, String, widget::text_input::Id)>,
-    tag_names: HashMap<Tag, String>,
+    editing_tag_name: Option<(String, String, widget::text_input::Id)>,
+    tag_names: HashMap<String, String>,
 }
 
 #[derive(Debug)]
@@ -103,7 +103,7 @@ struct PathList {
 
 #[derive(Debug)]
 struct Metadata {
-    tag: Option<Tag>,
+    tag: Option<String>,
 }
 
 #[derive(Clone)]
@@ -140,7 +140,7 @@ enum SortingMessage {
     UserPressedPreviousImage,
     UserPressedMoveTag(String),
     UserPressedTagButton(String),
-    UserPressedRenameTag(Tag),
+    UserPressedRenameTag(String),
     UserPressedSubmitRenameTag,
     UserPressedCancelRenameTag,
     UserEditTagName(String),
@@ -208,7 +208,7 @@ impl PathList {
         paths
     }
 
-    fn tag_of(&self, path: &str) -> Option<Tag> {
+    fn tag_of(&self, path: &str) -> Option<String> {
         self.paths
             .iter()
             .find(|info| info.path == path)
@@ -339,10 +339,10 @@ impl Model {
                     expanded_dropdown: None,
                     editing_tag_name: None,
                     tag_names: HashMap::from_iter([
-                        (TAG1, "Red".to_owned()),
-                        (TAG2, "Green".to_owned()),
-                        (TAG3, "Yellow".to_owned()),
-                        (TAG4, "Blue".to_owned()),
+                        ("a".to_owned(), "Red".to_owned()),
+                        ("o".to_owned(), "Green".to_owned()),
+                        ("e".to_owned(), "Yellow".to_owned()),
+                        ("u".to_owned(), "Blue".to_owned()),
                     ]),
                 });
             }
@@ -566,7 +566,7 @@ impl Model {
         }
     }
 
-    fn tag_and_move_on(model: &mut SortingModel, tag: Tag) -> Effect {
+    fn tag_and_move_on(model: &mut SortingModel, tag: String) -> Effect {
         model.pathlist.current_mut().metadata.tag = Some(tag);
         user_pressed_next_image(model)
     }
@@ -828,7 +828,7 @@ fn tag_badge_color(tag: &str) -> iced::Color {
 
 fn view_image<'a>(
     image: &'a ImageInfo,
-    tag_names: &HashMap<Tag, String>,
+    tag_names: &HashMap<String, String>,
     dim: Dim,
     highlight: bool,
 ) -> Element<'a, Message> {
@@ -867,25 +867,12 @@ fn view_rename_tag_modal(text: &str, id: widget::text_input::Id) -> Element<Mess
         .into()
 }
 
-#[derive(Debug, Eq, Hash, PartialEq, Clone)]
-enum Tag {
-    Tag1,
-    Tag2,
-    Tag3,
-    Tag4,
-}
-
-const TAG1: Tag = Tag::Tag1;
-const TAG2: Tag = Tag::Tag2;
-const TAG3: Tag = Tag::Tag3;
-const TAG4: Tag = Tag::Tag4;
-
 fn view_tag_button_row<'a>(
     expanded: &str,
-    names: &'a HashMap<Tag, String>,
-    nums: &HashMap<Tag, u32>,
+    names: &'a HashMap<String, String>,
+    nums: &HashMap<String, u32>,
 ) -> Element<'a, Message> {
-    let red = names.get(TAG1).map(|s| s.as_str()).unwrap_or("Red");
+    let red = names.get("a").map(|s| s.as_str()).unwrap_or("Red");
     let green = names.get("o").map(|s| s.as_str()).unwrap_or("Green");
     let yellow = names.get("e").map(|s| s.as_str()).unwrap_or("Yellow");
     let blue = names.get("u").map(|s| s.as_str()).unwrap_or("Blue");
@@ -953,7 +940,7 @@ fn view_tag_button<'a>(
 
     let style_pressed = style.with_background(iced::Background::Color(press_bg));
 
-    let tag_button = widget::Button::new(widget::text!("{text} ({num})\n[a]"))
+    let tag_button = widget::Button::new(widget::text!("{text} ({num})"))
         .style(move |_, status| match &status {
             widget::button::Status::Active => style,
             widget::button::Status::Hovered => style_hovered,
@@ -964,7 +951,7 @@ fn view_tag_button<'a>(
             tag.to_owned(),
         )))
         .width(350)
-        .height(55);
+        .height(40);
 
     let more_button = widget::button("...")
         .style(move |_, status| match &status {
@@ -977,7 +964,7 @@ fn view_tag_button<'a>(
             tag.to_owned(),
         ))))
         .width(45)
-        .height(55);
+        .height(40);
 
     let drop_down_menu = column![
         tag_dropdown_button(

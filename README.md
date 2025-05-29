@@ -1,7 +1,7 @@
-# Tool to manually sort images
+# Tool to sort manually sort images
 
 The tool will allow you to tag images as you browse through them, and then move them into a specific subfolder based on the tags you've assigned to them.
-	It's meant to load images really fast. It's not meant to be a full fledged image viewer.
+It's meant to load images really fast. It's not meant to be a full fledged image viewer.
 
 ## Usage
 
@@ -19,7 +19,6 @@ Run it in the folder you want to sort images
 - [ ] Navigate folders
 - [ ] Obvious UI
     - Tooltips
-    - Labels
 - [ ] Nicer config screen
 - [ ] Save settings persistently
 - [ ] Config for thumbnails, size, above/below/side, amount
