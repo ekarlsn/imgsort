@@ -1,5 +1,7 @@
 use clap::Parser;
 use itertools::Itertools;
+#[allow(unused)]
+use rust_i18n::t;
 use std::collections::HashMap;
 
 use iced::event::{self, Event};
@@ -12,6 +14,7 @@ use log::debug;
 const TAGGING_CHARS: &str = "aoeupy";
 const PICTURE_DIR: &str = ".";
 const PRELOAD_IN_FLIGHT: usize = 8;
+#[allow(dead_code)]
 const PRELOAD_CACHE_SIZE: usize = 100;
 
 #[derive(Parser)]
@@ -69,7 +72,7 @@ struct SortingModel {
     pathlist: PathList,
 
     // Tags
-    expanded_dropdown: Option<String>,
+    expanded_dropdown: Option<Tag>,
     editing_tag_name: Option<(Tag, String, widget::text_input::Id)>,
     tag_names: HashMap<Tag, String>,
 }
@@ -138,13 +141,13 @@ enum Message {
 enum SortingMessage {
     UserPressedNextImage,
     UserPressedPreviousImage,
-    UserPressedMoveTag(String),
-    UserPressedTagButton(String),
+    UserPressedMoveTag(Tag),
+    UserPressedTagButton(Tag),
     UserPressedRenameTag(Tag),
     UserPressedSubmitRenameTag,
     UserPressedCancelRenameTag,
     UserEditTagName(String),
-    UserPressedTagMenu(Option<String>),
+    UserPressedTagMenu(Option<Tag>),
     ImagePreloaded(String, ImageData),
     ImagePreloadFailed(String),
     KeyboardEvent(iced::keyboard::Event),
@@ -248,7 +251,7 @@ enum Effect {
     LsDir,
     PreloadImages(Vec<String>),
     GoToSorting,
-    MoveImagesWithTag(String),
+    MoveImagesWithTag(Tag),
     FocusElement(widget::text_input::Id),
 }
 
@@ -513,11 +516,12 @@ impl Model {
                     iced::keyboard::Key::Character(c)
                         if !modifiers.control() && TAGGING_CHARS.contains(c) =>
                     {
+                        let tag = keybind_char_to_tag(c).unwrap();
                         // Any tagging character
-                        Model::tag_and_move_on(model, c.to_owned())
+                        Model::tag_and_move_on(model, tag)
                     }
                     iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) => {
-                        Model::tag_and_move_on(model, "D".to_owned())
+                        Model::tag_and_move_on(model, TAG5)
                     }
                     iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace) => {
                         model.pathlist.paths[model.pathlist.index].metadata.tag = None;
@@ -675,7 +679,7 @@ impl Model {
         ));
 
         let tag_buttons = view_tag_button_row(
-            model.expanded_dropdown.as_ref().unwrap_or(&"".to_owned()),
+            model.expanded_dropdown.clone(),
             &model.tag_names,
             &tag_count,
         );
@@ -709,6 +713,7 @@ impl Model {
 
 enum SortingViewStyle {
     Thumbnails,
+    #[allow(unused)]
     BeforeAfter,
 }
 
@@ -776,7 +781,7 @@ fn view_image_with_thumbs<'a>(
     }
 }
 
-fn schedule_next_preload_image_after_one_finished(pathlist: &PathList, config: &Config) -> Effect {
+fn schedule_next_preload_image_after_one_finished(pathlist: &PathList, _config: &Config) -> Effect {
     let curr = pathlist.index;
 
     let forward = pathlist.paths.iter().skip(curr);
@@ -800,6 +805,16 @@ fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a
         .height(dim.height as f32)
 }
 
+fn keybind_char_to_tag(c: &str) -> Option<Tag> {
+    match c {
+        "a" => Some(TAG1),
+        "o" => Some(TAG2),
+        "e" => Some(TAG3),
+        "u" => Some(TAG4),
+        _ => None,
+    }
+}
+
 struct TagColors {
     red: Color,
     green: Color,
@@ -816,12 +831,12 @@ const TAG_COLORS: TagColors = TagColors {
     other: Color::from_rgb(0.5, 0.5, 0.5),
 };
 
-fn tag_badge_color(tag: &str) -> iced::Color {
-    match tag {
-        "a" => TAG_COLORS.red,
-        "o" => TAG_COLORS.green,
-        "e" => TAG_COLORS.yellow,
-        "u" => TAG_COLORS.blue,
+fn tag_badge_color(tag: &Tag) -> iced::Color {
+    match *tag {
+        TAG1 => TAG_COLORS.red,
+        TAG2 => TAG_COLORS.green,
+        TAG3 => TAG_COLORS.yellow,
+        TAG4 => TAG_COLORS.blue,
         _ => TAG_COLORS.other,
     }
 }
@@ -833,7 +848,7 @@ fn view_image<'a>(
     highlight: bool,
 ) -> Element<'a, Message> {
     let name_and_color = image.metadata.tag.as_ref().map(|tag| {
-        let name = tag_names.get(tag).unwrap_or(tag);
+        let name = tag_names.get(tag).unwrap();
         let color = tag_badge_color(tag);
         (name.to_owned(), color)
     });
@@ -873,62 +888,64 @@ enum Tag {
     Tag2,
     Tag3,
     Tag4,
+    Tag5,
 }
 
 const TAG1: Tag = Tag::Tag1;
 const TAG2: Tag = Tag::Tag2;
 const TAG3: Tag = Tag::Tag3;
 const TAG4: Tag = Tag::Tag4;
+const TAG5: Tag = Tag::Tag5;
 
 fn view_tag_button_row<'a>(
-    expanded: &str,
+    expanded: Option<Tag>,
     names: &'a HashMap<Tag, String>,
     nums: &HashMap<Tag, u32>,
 ) -> Element<'a, Message> {
-    let red = names.get(TAG1).map(|s| s.as_str()).unwrap_or("Red");
-    let green = names.get("o").map(|s| s.as_str()).unwrap_or("Green");
-    let yellow = names.get("e").map(|s| s.as_str()).unwrap_or("Yellow");
-    let blue = names.get("u").map(|s| s.as_str()).unwrap_or("Blue");
-    let red_num = *nums.get("a").unwrap_or(&0);
-    let green_num = *nums.get("o").unwrap_or(&0);
-    let yellow_num = *nums.get("e").unwrap_or(&0);
-    let blue_num = *nums.get("u").unwrap_or(&0);
+    let red = names.get(&TAG1).map(|s| s.as_str()).unwrap_or("Red");
+    let green = names.get(&TAG2).map(|s| s.as_str()).unwrap_or("Green");
+    let yellow = names.get(&TAG3).map(|s| s.as_str()).unwrap_or("Yellow");
+    let blue = names.get(&TAG4).map(|s| s.as_str()).unwrap_or("Blue");
+    let red_num = *nums.get(&TAG1).unwrap_or(&0);
+    let green_num = *nums.get(&TAG2).unwrap_or(&0);
+    let yellow_num = *nums.get(&TAG3).unwrap_or(&0);
+    let blue_num = *nums.get(&TAG4).unwrap_or(&0);
     row![
         view_tag_button(
             red,
-            "a",
+            &TAG1,
             red_num,
             Color::from_rgb(1.0, 0.0, 0.0),
             Color::from_rgb(1.0, 0.4, 0.4),
             Color::from_rgb(5.0, 0.0, 0.0),
-            expanded == "a",
+            expanded == Some(TAG1),
         ),
         view_tag_button(
             green,
-            "o",
+            &TAG2,
             green_num,
             Color::from_rgb(0.0, 0.6, 0.0),
             Color::from_rgb(0.2, 6.0, 0.2),
             Color::from_rgb(0.0, 0.3, 0.0),
-            expanded == "o",
+            expanded == Some(TAG2),
         ),
         view_tag_button(
             yellow,
-            "e",
+            &TAG3,
             yellow_num,
             Color::from_rgb(0.8, 0.8, 0.0),
             Color::from_rgb(0.8, 0.8, 0.6),
             Color::from_rgb(0.3, 0.3, 0.0),
-            expanded == "e",
+            expanded == Some(TAG3),
         ),
         view_tag_button(
             blue,
-            "u",
+            &TAG4,
             blue_num,
             Color::from_rgb(0.0, 0.0, 1.0),
             Color::from_rgb(0.4, 0.4, 1.0),
             Color::from_rgb(0.0, 0.0, 0.5),
-            expanded == "u",
+            expanded == Some(TAG4),
         ),
     ]
     .into()
@@ -936,7 +953,7 @@ fn view_tag_button_row<'a>(
 
 fn view_tag_button<'a>(
     text: &'a str,
-    tag: &str,
+    tag: &Tag,
     num: u32,
     basic_bg: Color,
     hover_bg: Color,
@@ -961,7 +978,7 @@ fn view_tag_button<'a>(
             widget::button::Status::Disabled => style,
         })
         .on_press(Message::Sorting(SortingMessage::UserPressedTagButton(
-            tag.to_owned(),
+            tag.clone(),
         )))
         .width(350)
         .height(55);
@@ -974,7 +991,7 @@ fn view_tag_button<'a>(
             widget::button::Status::Disabled => style,
         })
         .on_press(Message::Sorting(SortingMessage::UserPressedTagMenu(Some(
-            tag.to_owned(),
+            tag.clone(),
         ))))
         .width(45)
         .height(55);
@@ -1085,7 +1102,7 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
                                 files_to_move.push(info.path.clone());
                             }
                         }
-                        sorting.tag_names.get(&tag).unwrap_or(&tag).clone()
+                        sorting.tag_names.get(&tag).unwrap().clone()
                     }
                     _ => panic!("MoveImages effect should only be called in the sorting state"),
                 };
