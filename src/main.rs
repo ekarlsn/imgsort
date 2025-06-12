@@ -1,6 +1,5 @@
 use clap::Parser;
 use itertools::Itertools;
-#[allow(unused)]
 use rust_i18n::t;
 use std::collections::HashMap;
 
@@ -10,6 +9,8 @@ use iced::{Color, Element, Length, Subscription, Task};
 use iced_aw::{drop_down, DropDown};
 use image::ImageReader;
 use log::debug;
+
+rust_i18n::i18n!("locales");
 
 const TAGGING_CHARS: &str = "aoeupy";
 const PICTURE_DIR: &str = ".";
@@ -40,6 +41,8 @@ pub fn main() -> iced::Result {
         ),
     ])
     .unwrap();
+
+    rust_i18n::set_locale("se");
 
     let args = Args::parse();
 
@@ -685,11 +688,18 @@ impl Model {
         );
 
         let action_buttons = row![
-            button("<- Previous")
-                .on_press(Message::Sorting(SortingMessage::UserPressedPreviousImage)),
-            button("Next ->").on_press(Message::Sorting(SortingMessage::UserPressedNextImage)),
-            button("Settings").on_press(Message::UserPressedGoToSettings),
-            button("Select Folder").on_press(Message::UserPressedSelectFolder),
+            widget::button(widget::text!("{}", t!("<- Previous")))
+                .on_press(Message::Sorting(SortingMessage::UserPressedPreviousImage))
+                .padding(10),
+            widget::button(widget::text!("{}", t!("Next ->")))
+                .on_press(Message::Sorting(SortingMessage::UserPressedNextImage))
+                .padding(10),
+            widget::button(widget::text!("{}", t!("Settings")))
+                .on_press(Message::UserPressedGoToSettings)
+                .padding(10),
+            widget::button(widget::text!("{}", t!("Select Folder")))
+                .on_press(Message::UserPressedSelectFolder)
+                .padding(10),
         ];
 
         let content = column![

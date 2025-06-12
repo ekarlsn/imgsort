@@ -15,6 +15,7 @@ Run it in the folder you want to sort images
 - [x] Fix crash when opened in empty dir
 - [x] Picture placeholder the same size as a picture
 - [x] Preload current image first
+- [ ] Fix crash on delete tag
 - [ ] Internationalize
 - [ ] Navigate folders
 - [ ] Obvious UI
