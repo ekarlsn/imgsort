@@ -169,6 +169,7 @@ enum SettingsFieldName {
     PreloadFrontNum,
     ScaleDownSizeWidth,
     ScaleDownSizeHeight,
+    Tag1Shortcut,
 }
 
 impl PathList {
@@ -389,6 +390,10 @@ impl Model {
                     (
                         SettingsFieldName::ScaleDownSizeHeight,
                         (self.config.scale_down_size.1.to_string(), "".to_owned()),
+                    ),
+                    (
+                        SettingsFieldName::Tag1Shortcut,
+                        ("a".to_owned(), "".to_owned()),
                     ),
                 ]);
                 self.state = ModelState::Settings(SettingsModel { fields });
@@ -611,6 +616,7 @@ impl Model {
             .fields
             .get(&SettingsFieldName::ScaleDownSizeHeight)
             .unwrap();
+        let (tag1_text, tag1_error) = model.fields.get(&SettingsFieldName::Tag1Shortcut).unwrap();
 
         column![
             widget::text("Settings"),
@@ -650,6 +656,17 @@ impl Model {
                         text
                     ))),
                 widget::text(scale_down_height_error),
+            ],
+            widget::text("Shortcuts"),
+            row![
+                widget::text("Tag 1"),
+                widget::text_input("Tag 1", tag1_text)
+                    .id("tag_1_shortcut")
+                    .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
+                        SettingsFieldName::Tag1Shortcut,
+                        text
+                    ))),
+                widget::text(tag1_error),
             ],
             button("Back to sorting")
                 .on_press(Message::Settings(SettingsMessage::UserPressedBackToSorting,)),
