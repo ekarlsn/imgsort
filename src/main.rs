@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use iced::event::{self, Event};
 use iced::widget::{self, center, column, row, stack};
 use iced::{Color, Element, Length, Subscription, Task};
-use iced_aw::{drop_down, DropDown};
+use iced_aw::{drop_down, DropDown, Tabs};
 use image::ImageReader;
 use log::debug;
 
@@ -60,6 +60,8 @@ pub fn main() -> iced::Result {
 struct Model {
     config: Config,
     state: ModelState,
+    settings: SettingsModel,
+    active_tab: TabId,
 }
 
 #[derive(Debug)]
@@ -67,7 +69,6 @@ enum ModelState {
     LoadingListDir,
     EmptyDirectory,
     Sorting(SortingModel),
-    Settings(SettingsModel),
 }
 
 #[derive(Debug)]
@@ -119,6 +120,13 @@ struct ImageData {
     data: Vec<u8>,
 }
 
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+enum TabId {
+    Main,
+    Actions,
+    Settings,
+}
+
 impl std::fmt::Debug for ImageData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ImageData")
@@ -131,9 +139,8 @@ impl std::fmt::Debug for ImageData {
 
 #[derive(Debug, Clone)]
 enum Message {
-    UserPressedGoToSettings,
-    UserPressedGoToSorting,
     UserPressedSelectFolder,
+    UserSelectedTab(TabId),
     ListDirCompleted(Vec<String>),
     KeyboardEventOccurred(iced::keyboard::Event),
     Settings(SettingsMessage),
@@ -159,7 +166,6 @@ enum SortingMessage {
 #[derive(Debug, Clone)]
 enum SettingsMessage {
     UserUpdatedField(SettingsFieldName, String),
-    UserPressedBackToSorting,
     Save,
 }
 
@@ -254,21 +260,46 @@ enum Effect {
     None,
     LsDir,
     PreloadImages(Vec<String>),
-    GoToSorting,
     MoveImagesWithTag(Tag),
     FocusElement(widget::text_input::Id),
 }
 
 impl Model {
     fn new() -> (Self, Effect) {
+        let config = Config {
+            preload_back_num: 10,
+            preload_front_num: 30,
+            scale_down_size: (800, 600),
+        };
         (
             Self {
-                config: Config {
-                    preload_back_num: 10,
-                    preload_front_num: 30,
-                    scale_down_size: (800, 600),
-                },
+                config: config.clone(),
                 state: ModelState::LoadingListDir,
+                settings: SettingsModel {
+                    fields: HashMap::from_iter([
+                        (
+                            SettingsFieldName::PreloadBackNum,
+                            (config.preload_back_num.to_string(), String::from("")),
+                        ),
+                        (
+                            SettingsFieldName::PreloadFrontNum,
+                            (config.preload_front_num.to_string(), String::from("")),
+                        ),
+                        (
+                            SettingsFieldName::ScaleDownSizeWidth,
+                            (config.scale_down_size.0.to_string(), String::from("")),
+                        ),
+                        (
+                            SettingsFieldName::ScaleDownSizeHeight,
+                            (config.scale_down_size.1.to_string(), String::from("")),
+                        ),
+                        (
+                            SettingsFieldName::Tag1Shortcut,
+                            ("a".to_owned(), String::from("")),
+                        ),
+                    ]),
+                },
+                active_tab: TabId::Main,
             },
             Effect::LsDir,
         )
@@ -346,10 +377,10 @@ impl Model {
                     expanded_dropdown: None,
                     editing_tag_name: None,
                     tag_names: HashMap::from_iter([
-                        (TAG1, "Red".to_owned()),
-                        (TAG2, "Green".to_owned()),
-                        (TAG3, "Yellow".to_owned()),
-                        (TAG4, "Blue".to_owned()),
+                        (Tag::Tag1, "Red".to_owned()),
+                        (Tag::Tag2, "Green".to_owned()),
+                        (Tag::Tag3, "Yellow".to_owned()),
+                        (Tag::Tag4, "Blue".to_owned()),
                     ]),
                 });
             }
@@ -373,35 +404,9 @@ impl Model {
     fn update(&mut self, message: Message) -> Effect {
         debug!("Message: {:?}", message);
         let effect = match message {
-            Message::UserPressedGoToSettings => {
-                let fields = HashMap::from_iter([
-                    (
-                        SettingsFieldName::PreloadBackNum,
-                        (self.config.preload_back_num.to_string(), "".to_owned()),
-                    ),
-                    (
-                        SettingsFieldName::PreloadFrontNum,
-                        (self.config.preload_front_num.to_string(), "".to_owned()),
-                    ),
-                    (
-                        SettingsFieldName::ScaleDownSizeWidth,
-                        (self.config.scale_down_size.0.to_string(), "".to_owned()),
-                    ),
-                    (
-                        SettingsFieldName::ScaleDownSizeHeight,
-                        (self.config.scale_down_size.1.to_string(), "".to_owned()),
-                    ),
-                    (
-                        SettingsFieldName::Tag1Shortcut,
-                        ("a".to_owned(), "".to_owned()),
-                    ),
-                ]);
-                self.state = ModelState::Settings(SettingsModel { fields });
+            Message::UserSelectedTab(tab) => {
+                self.active_tab = tab;
                 Effect::None
-            }
-            Message::UserPressedGoToSorting => {
-                self.state = ModelState::LoadingListDir;
-                Effect::LsDir
             }
             Message::UserPressedSelectFolder => Effect::None,
             Message::ListDirCompleted(paths) => {
@@ -426,60 +431,54 @@ impl Model {
                 }
                 _ => Effect::None,
             },
-            Message::Settings(settings_message) => match &mut self.state {
-                ModelState::Settings(settings_model) => {
-                    Model::update_settings_model(settings_model, settings_message, &mut self.config)
-                }
-                _ => panic!("Settings message ({settings_message:?}) in non-settings state"),
-            },
+            Message::Settings(settings_message) => self.update_settings_model(settings_message),
         };
 
         debug!("Effect: {:?}", effect);
         effect
     }
 
-    fn update_settings_model(
-        model: &mut SettingsModel,
-        message: SettingsMessage,
-        _config: &mut Config,
-    ) -> Effect {
+    fn update_settings_model(&mut self, message: SettingsMessage) -> Effect {
         match message {
             SettingsMessage::UserUpdatedField(field, text) => {
-                model.fields.insert(field, (text, "".to_owned()));
+                self.settings.fields.insert(field, (text, "".to_owned()));
                 Effect::None
             }
-            SettingsMessage::UserPressedBackToSorting => Effect::GoToSorting,
             SettingsMessage::Save => {
-                let (text, error) = model
+                let (text, error) = self
+                    .settings
                     .fields
                     .get_mut(&SettingsFieldName::PreloadBackNum)
                     .unwrap();
                 match text.parse() {
-                    Ok(num) => _config.preload_back_num = num,
+                    Ok(num) => self.config.preload_back_num = num,
                     Err(_) => *error = "Invalid number".to_owned(),
                 }
-                let (text, error) = model
+                let (text, error) = self
+                    .settings
                     .fields
                     .get_mut(&SettingsFieldName::PreloadFrontNum)
                     .unwrap();
                 match text.parse() {
-                    Ok(num) => _config.preload_front_num = num,
+                    Ok(num) => self.config.preload_front_num = num,
                     Err(_) => *error = "Invalid number".to_owned(),
                 }
-                let (text, error) = model
+                let (text, error) = self
+                    .settings
                     .fields
                     .get_mut(&SettingsFieldName::ScaleDownSizeWidth)
                     .unwrap();
                 match text.parse() {
-                    Ok(num) => _config.scale_down_size.0 = num,
+                    Ok(num) => self.config.scale_down_size.0 = num,
                     Err(_) => *error = "Invalid number".to_owned(),
                 }
-                let (text, error) = model
+                let (text, error) = self
+                    .settings
                     .fields
                     .get_mut(&SettingsFieldName::ScaleDownSizeHeight)
                     .unwrap();
                 match text.parse() {
-                    Ok(num) => _config.scale_down_size.1 = num,
+                    Ok(num) => self.config.scale_down_size.1 = num,
                     Err(_) => *error = "Invalid number".to_owned(),
                 }
                 Effect::None
@@ -584,14 +583,45 @@ impl Model {
     }
 
     fn view(&self) -> Element<Message> {
-        match &self.state {
+        let main_content = match &self.state {
             ModelState::Sorting(model) => Model::view_sorting_model(model, &self.config),
             ModelState::LoadingListDir => widget::text("Loading...").into(),
-            ModelState::EmptyDirectory => Model::view_empty_dir_model(),
-            ModelState::Settings(settings_model) => Model::view_settings_model(settings_model),
-        }
+            ModelState::EmptyDirectory => self.view_empty_dir_model(),
+        };
+
+        let actions_content: Element<Message> = widget::container(
+            widget::column![
+                widget::text("Actions").size(24),
+                widget::text("This is the actions tab - coming soon!")
+            ]
+            .spacing(10),
+        )
+        .padding(20)
+        .into();
+
+        let settings_content = Model::view_settings_model(&self.settings);
+
+        Tabs::new(Message::UserSelectedTab)
+            .push(
+                TabId::Main,
+                iced_aw::TabLabel::Text(String::from("Main")),
+                main_content,
+            )
+            .push(
+                TabId::Actions,
+                iced_aw::TabLabel::Text(String::from("Actions")),
+                actions_content,
+            )
+            .push(
+                TabId::Settings,
+                iced_aw::TabLabel::Text(String::from("Settings")),
+                settings_content,
+            )
+            .set_active_tab(&self.active_tab)
+            .into()
     }
-    fn view_empty_dir_model() -> Element<'static, Message> {
+
+    fn view_empty_dir_model(&self) -> Element<'static, Message> {
         column![
             widget::text("No pictures in this directory, select another one"),
             button("Select Folder").on_press(Message::UserPressedSelectFolder),
@@ -668,8 +698,6 @@ impl Model {
                     ))),
                 widget::text(tag1_error),
             ],
-            button("Back to sorting")
-                .on_press(Message::Settings(SettingsMessage::UserPressedBackToSorting,)),
             button("Save").on_press(Message::Settings(SettingsMessage::Save,)),
         ]
         .into()
@@ -710,9 +738,6 @@ impl Model {
                 .padding(10),
             widget::button(widget::text!("{}", t!("Next ->")))
                 .on_press(Message::Sorting(SortingMessage::UserPressedNextImage))
-                .padding(10),
-            widget::button(widget::text!("{}", t!("Settings")))
-                .on_press(Message::UserPressedGoToSettings)
                 .padding(10),
             widget::button(widget::text!("{}", t!("Select Folder")))
                 .on_press(Message::UserPressedSelectFolder)
@@ -1118,7 +1143,6 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
         Effect::None => Task::none(),
         Effect::LsDir => ls_dir_task(PICTURE_DIR.to_owned()),
         Effect::PreloadImages(paths) => preload_images_task(paths, config),
-        Effect::GoToSorting => Task::done(Message::UserPressedGoToSorting),
         Effect::MoveImagesWithTag(tag) => {
             let (files_to_move, tag_name) = {
                 let mut files_to_move = Vec::new();
