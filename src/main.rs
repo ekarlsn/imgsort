@@ -62,6 +62,7 @@ struct Model {
     state: ModelState,
     settings: SettingsModel,
     active_tab: TabId,
+    selected_action_tag: Option<Tag>,
 }
 
 #[derive(Debug)]
@@ -78,7 +79,7 @@ struct SortingModel {
     // Tags
     expanded_dropdown: Option<Tag>,
     editing_tag_name: Option<(Tag, String, widget::text_input::Id)>,
-    tag_names: HashMap<Tag, String>,
+    tag_names: TagNames,
 }
 
 #[derive(Debug)]
@@ -141,6 +142,8 @@ impl std::fmt::Debug for ImageData {
 enum Message {
     UserPressedSelectFolder,
     UserSelectedTab(TabId),
+    UserPressedActionTag(Tag),
+    UserPressedActionBack,
     ListDirCompleted(Vec<String>),
     KeyboardEventOccurred(iced::keyboard::Event),
     Settings(SettingsMessage),
@@ -264,12 +267,51 @@ enum Effect {
     FocusElement(widget::text_input::Id),
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct TagNames {
+    tag1: String,
+    tag2: String,
+    tag3: String,
+    tag4: String,
+}
+
+impl TagNames {
+    fn new() -> Self {
+        Self {
+            tag1: String::from("Red"),
+            tag2: String::from("Green"),
+            tag3: String::from("Yellow"),
+            tag4: String::from("Blue"),
+        }
+    }
+
+    fn update(&mut self, tag: Tag, name: String) {
+        match tag {
+            Tag::Tag1 => self.tag1 = name,
+            Tag::Tag2 => self.tag2 = name,
+            Tag::Tag3 => self.tag3 = name,
+            Tag::Tag4 => self.tag4 = name,
+            Tag::Tag5 => (),
+        }
+    }
+
+    fn get(&self, tag: &Tag) -> &str {
+        match tag {
+            Tag::Tag1 => &self.tag1,
+            Tag::Tag2 => &self.tag2,
+            Tag::Tag3 => &self.tag3,
+            Tag::Tag4 => &self.tag4,
+            Tag::Tag5 => "",
+        }
+    }
+}
+
 impl Model {
     fn new() -> (Self, Effect) {
         let config = Config {
             preload_back_num: 10,
             preload_front_num: 30,
-            scale_down_size: (800, 600),
+            scale_down_size: (800, 100),
         };
         (
             Self {
@@ -300,6 +342,7 @@ impl Model {
                     ]),
                 },
                 active_tab: TabId::Main,
+                selected_action_tag: None,
             },
             Effect::LsDir,
         )
@@ -376,12 +419,7 @@ impl Model {
                     ),
                     expanded_dropdown: None,
                     editing_tag_name: None,
-                    tag_names: HashMap::from_iter([
-                        (Tag::Tag1, "Red".to_owned()),
-                        (Tag::Tag2, "Green".to_owned()),
-                        (Tag::Tag3, "Yellow".to_owned()),
-                        (Tag::Tag4, "Blue".to_owned()),
-                    ]),
+                    tag_names: TagNames::new(),
                 });
             }
         };
@@ -406,6 +444,15 @@ impl Model {
         let effect = match message {
             Message::UserSelectedTab(tab) => {
                 self.active_tab = tab;
+                self.selected_action_tag = None;
+                Effect::None
+            }
+            Message::UserPressedActionTag(tag) => {
+                self.selected_action_tag = Some(tag);
+                Effect::None
+            }
+            Message::UserPressedActionBack => {
+                self.selected_action_tag = None;
                 Effect::None
             }
             Message::UserPressedSelectFolder => Effect::None,
@@ -550,7 +597,7 @@ impl Model {
             }
             SortingMessage::UserPressedSubmitRenameTag => {
                 let (tag, new_tag_name, _) = model.editing_tag_name.take().unwrap();
-                model.tag_names.insert(tag, new_tag_name);
+                model.tag_names.update(tag, new_tag_name);
                 Effect::None
             }
             SortingMessage::UserPressedCancelRenameTag => {
@@ -589,15 +636,7 @@ impl Model {
             ModelState::EmptyDirectory => self.view_empty_dir_model(),
         };
 
-        let actions_content: Element<Message> = widget::container(
-            widget::column![
-                widget::text("Actions").size(24),
-                widget::text("This is the actions tab - coming soon!")
-            ]
-            .spacing(10),
-        )
-        .padding(20)
-        .into();
+        let actions_content = self.view_actions_tab();
 
         let settings_content = Model::view_settings_model(&self.settings);
 
@@ -851,6 +890,84 @@ fn schedule_next_preload_image_after_one_finished(pathlist: &PathList, _config: 
     Effect::None
 }
 
+impl Model {
+    fn view_actions_tab(&self) -> Element<Message> {
+        if let Some(tag) = &self.selected_action_tag {
+            // Show tag action view
+            let tag_name = match &self.state {
+                ModelState::Sorting(model) => model.tag_names.clone(),
+                _ => TagNames::new(),
+            }
+            .get(tag)
+            .to_string();
+
+            widget::container(
+                widget::column![
+                    widget::row![
+                        button("← Back").on_press(Message::UserPressedActionBack),
+                        widget::text(tag_name).size(24),
+                    ]
+                    .spacing(10)
+                    .align_y(iced::Alignment::Center),
+                    widget::column![
+                        button("Delete").width(200),
+                        button("Move").width(200),
+                        button("Copy").width(200),
+                    ]
+                    .spacing(10)
+                    .padding(20),
+                ]
+                .spacing(20),
+            )
+            .padding(20)
+            .into()
+        } else {
+            let tag_names = match &self.state {
+                ModelState::Sorting(model) => model.tag_names.clone(),
+                _ => TagNames::new(),
+            };
+
+            // Show tag list
+            let tag_buttons = widget::column![
+                widget::text("Actions").size(24),
+                widget::text("Select a tag to perform actions:").size(16),
+                widget::column![
+                    self.view_action_tag_button(Tag::Tag1, tag_names.tag1.to_string()),
+                    self.view_action_tag_button(Tag::Tag2, tag_names.tag2.to_string()),
+                    self.view_action_tag_button(Tag::Tag3, tag_names.tag3.to_string()),
+                    self.view_action_tag_button(Tag::Tag4, tag_names.tag4.to_string()),
+                ]
+                .spacing(10),
+            ]
+            .spacing(15);
+
+            widget::container(tag_buttons).padding(20).into()
+        }
+    }
+
+    fn view_action_tag_button(&self, tag: Tag, name: String) -> Element<Message> {
+        let tag_name = name;
+
+        widget::button(widget::text(tag_name))
+            .width(200)
+            .style(move |_theme, _status| {
+                let color = tag_badge_color(&tag);
+                widget::button::Style {
+                    background: Some(iced::Background::Color(color)),
+                    text_color: Color::WHITE,
+                    border: iced::Border {
+                        color: color,
+                        width: 1.0,
+                        radius: 4.0.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                }
+            })
+            .on_press(Message::UserPressedActionTag(tag))
+            .into()
+    }
+}
+
 fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a> {
     widget::text(msg.as_ref().to_owned())
         .width(dim.width as f32)
@@ -895,12 +1012,12 @@ fn tag_badge_color(tag: &Tag) -> iced::Color {
 
 fn view_image<'a>(
     image: &'a ImageInfo,
-    tag_names: &HashMap<Tag, String>,
+    tag_names: &TagNames,
     dim: Dim,
     highlight: bool,
 ) -> Element<'a, Message> {
     let name_and_color = image.metadata.tag.as_ref().map(|tag| {
-        let name = tag_names.get(tag).unwrap();
+        let name = tag_names.get(tag);
         let color = tag_badge_color(tag);
         (name.to_owned(), color)
     });
@@ -934,7 +1051,7 @@ fn view_rename_tag_modal(text: &str, id: widget::text_input::Id) -> Element<Mess
         .into()
 }
 
-#[derive(Debug, Eq, Hash, PartialEq, Clone)]
+#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy)]
 enum Tag {
     Tag1,
     Tag2,
@@ -951,13 +1068,13 @@ const TAG5: Tag = Tag::Tag5;
 
 fn view_tag_button_row<'a>(
     expanded: Option<Tag>,
-    names: &'a HashMap<Tag, String>,
+    names: &'a TagNames,
     nums: &HashMap<Tag, u32>,
 ) -> Element<'a, Message> {
-    let red = names.get(&TAG1).map(|s| s.as_str()).unwrap_or("Red");
-    let green = names.get(&TAG2).map(|s| s.as_str()).unwrap_or("Green");
-    let yellow = names.get(&TAG3).map(|s| s.as_str()).unwrap_or("Yellow");
-    let blue = names.get(&TAG4).map(|s| s.as_str()).unwrap_or("Blue");
+    let red = names.tag1.as_str();
+    let green = names.tag2.as_str();
+    let yellow = names.tag3.as_str();
+    let blue = names.tag4.as_str();
     let red_num = *nums.get(&TAG1).unwrap_or(&0);
     let green_num = *nums.get(&TAG2).unwrap_or(&0);
     let yellow_num = *nums.get(&TAG3).unwrap_or(&0);
@@ -1153,7 +1270,7 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
                                 files_to_move.push(info.path.clone());
                             }
                         }
-                        sorting.tag_names.get(&tag).unwrap().clone()
+                        sorting.tag_names.get(&tag)
                     }
                     _ => panic!("MoveImages effect should only be called in the sorting state"),
                 };
@@ -1164,7 +1281,7 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
                 Task::none()
             } else {
                 println!("mv {} \"{}\"", files_to_move.join(" "), tag_name);
-                mv_files_task(files_to_move, tag_name)
+                mv_files_task(files_to_move, tag_name.to_string())
                     .then(|()| ls_dir_task(PICTURE_DIR.to_owned()))
             }
         }
