@@ -12,6 +12,8 @@ use log::debug;
 
 rust_i18n::i18n!("locales");
 
+mod actions;
+
 const TAGGING_CHARS: &str = "aoeupy";
 const PICTURE_DIR: &str = ".";
 const PRELOAD_IN_FLIGHT: usize = 8;
@@ -636,7 +638,11 @@ impl Model {
             ModelState::EmptyDirectory => self.view_empty_dir_model(),
         };
 
-        let actions_content = self.view_actions_tab();
+        let tag_names = match &self.state {
+            ModelState::Sorting(model) => model.tag_names.clone(),
+            _ => TagNames::new(),
+        };
+        let actions_content = actions::view_actions_tab(&self.selected_action_tag, &tag_names);
 
         let settings_content = Model::view_settings_model(&self.settings);
 
@@ -890,100 +896,6 @@ fn schedule_next_preload_image_after_one_finished(pathlist: &PathList, _config: 
     Effect::None
 }
 
-impl Model {
-    fn view_actions_tab(&self) -> Element<Message> {
-        if let Some(tag) = &self.selected_action_tag {
-            // Show tag action view
-            let tag_name = match &self.state {
-                ModelState::Sorting(model) => model.tag_names.clone(),
-                _ => TagNames::new(),
-            }
-            .get(tag)
-            .to_string();
-
-            widget::container(
-                widget::column![
-                    widget::row![
-                        button("← Back").on_press(Message::UserPressedActionBack),
-                        widget::text(tag_name).size(24),
-                    ]
-                    .spacing(10)
-                    .align_y(iced::Alignment::Center),
-                    widget::column![
-                        button("Delete").width(200),
-                        button("Move").width(200),
-                        button("Copy").width(200),
-                    ]
-                    .spacing(10)
-                    .padding(20),
-                ]
-                .spacing(20),
-            )
-            .padding(20)
-            .into()
-        } else {
-            let tag_names = match &self.state {
-                ModelState::Sorting(model) => model.tag_names.clone(),
-                _ => TagNames::new(),
-            };
-
-            // Show tag list
-            let tag_buttons = widget::column![
-                widget::text("Actions").size(24),
-                widget::text("Select a tag to perform actions:").size(16),
-                widget::column![
-                    self.view_action_tag_button(Tag::Tag1, tag_names.tag1.to_string()),
-                    self.view_action_tag_button(Tag::Tag2, tag_names.tag2.to_string()),
-                    self.view_action_tag_button(Tag::Tag3, tag_names.tag3.to_string()),
-                    self.view_action_tag_button(Tag::Tag4, tag_names.tag4.to_string()),
-                ]
-                .spacing(10),
-            ]
-            .spacing(15);
-
-            widget::container(tag_buttons).padding(20).into()
-        }
-    }
-
-    fn view_action_tag_button(&self, tag: Tag, name: String) -> Element<Message> {
-        let tag_name = name;
-
-        widget::button(widget::text(tag_name))
-            .width(200)
-            .style(move |_theme, _status| {
-                let color = tag_badge_color(&tag);
-                widget::button::Style {
-                    background: Some(iced::Background::Color(color)),
-                    text_color: Color::WHITE,
-                    border: iced::Border {
-                        color: color,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    shadow: iced::Shadow::default(),
-                }
-            })
-            .on_press(Message::UserPressedActionTag(tag))
-            .into()
-    }
-}
-
-fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a> {
-    widget::text(msg.as_ref().to_owned())
-        .width(dim.width as f32)
-        .height(dim.height as f32)
-}
-
-fn keybind_char_to_tag(c: &str) -> Option<Tag> {
-    match c {
-        "a" => Some(TAG1),
-        "o" => Some(TAG2),
-        "e" => Some(TAG3),
-        "u" => Some(TAG4),
-        _ => None,
-    }
-}
-
 struct TagColors {
     red: Color,
     green: Color,
@@ -1000,6 +912,12 @@ const TAG_COLORS: TagColors = TagColors {
     other: Color::from_rgb(0.5, 0.5, 0.5),
 };
 
+const TAG1: Tag = Tag::Tag1;
+const TAG2: Tag = Tag::Tag2;
+const TAG3: Tag = Tag::Tag3;
+const TAG4: Tag = Tag::Tag4;
+const TAG5: Tag = Tag::Tag5;
+
 fn tag_badge_color(tag: &Tag) -> iced::Color {
     match *tag {
         TAG1 => TAG_COLORS.red,
@@ -1007,6 +925,24 @@ fn tag_badge_color(tag: &Tag) -> iced::Color {
         TAG3 => TAG_COLORS.yellow,
         TAG4 => TAG_COLORS.blue,
         _ => TAG_COLORS.other,
+    }
+}
+
+impl Model {}
+
+fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a> {
+    widget::text(msg.as_ref().to_owned())
+        .width(dim.width as f32)
+        .height(dim.height as f32)
+}
+
+fn keybind_char_to_tag(c: &str) -> Option<Tag> {
+    match c {
+        "a" => Some(TAG1),
+        "o" => Some(TAG2),
+        "e" => Some(TAG3),
+        "u" => Some(TAG4),
+        _ => None,
     }
 }
 
@@ -1059,12 +995,6 @@ enum Tag {
     Tag4,
     Tag5,
 }
-
-const TAG1: Tag = Tag::Tag1;
-const TAG2: Tag = Tag::Tag2;
-const TAG3: Tag = Tag::Tag3;
-const TAG4: Tag = Tag::Tag4;
-const TAG5: Tag = Tag::Tag5;
 
 fn view_tag_button_row<'a>(
     expanded: Option<Tag>,
