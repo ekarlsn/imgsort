@@ -15,6 +15,7 @@ Run it in the folder you want to sort images
 - [x] Fix crash when opened in empty dir
 - [x] Picture placeholder the same size as a picture
 - [x] Preload current image first
+- [x] Tabbed view, with iced_aw tabbed widget
 - [ ] Fix crash on delete tag
 - [ ] Internationalize
 - [ ] Navigate folders
@@ -27,7 +28,6 @@ Run it in the folder you want to sort images
 - [ ] Config for shortcuts
 - [ ] Thumbnails adjust to screen size
 - [ ] Size detection
-- [ ] Tabbed view, with iced_aw tabbed widget
 - [ ] Don't create log file by default
 - [ ] Less yank after moving images
 - [ ] Failure handling when images can't be moved
