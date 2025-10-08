@@ -185,7 +185,7 @@ impl PathList {
         self.paths
             .iter()
             .find(|info| info.path == path)
-            .and_then(|info| info.metadata.tag.clone())
+            .and_then(|info| info.metadata.tag)
     }
     fn prev(&self) -> Option<&ImageInfo> {
         if self.index == 0 {
@@ -335,7 +335,7 @@ impl Model {
     }
 
     fn update(&mut self, message: Message) -> Effect {
-        debug!("Message: {:?}", message);
+        debug!("Message: {message:?}");
         let effect = match message {
             Message::UserSelectedTab(tab) => {
                 self.active_tab = tab;
@@ -374,7 +374,7 @@ impl Model {
             }
         };
 
-        debug!("Effect: {:?}", effect);
+        debug!("Effect: {effect:?}");
         effect
     }
 
@@ -435,7 +435,7 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
                 let tag_name = match &model.state {
                     ModelState::Sorting(sorting) => {
                         for info in &sorting.pathlist.paths {
-                            if info.metadata.tag == Some(tag.clone()) {
+                            if info.metadata.tag == Some(tag) {
                                 files_to_move.push(info.path.clone());
                             }
                         }

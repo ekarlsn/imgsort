@@ -301,7 +301,7 @@ impl SortingModel {
         let mut tag_count = HashMap::new();
 
         for metadata in self.pathlist.paths.iter().map(|info| &info.metadata) {
-            if let Some(tag) = metadata.tag.clone() {
+            if let Some(tag) = metadata.tag {
                 let count = tag_count.entry(tag).or_insert(0);
                 *count += 1;
             }
@@ -314,8 +314,7 @@ impl SortingModel {
             path = self.pathlist.current().path,
         ));
 
-        let tag_buttons =
-            view_tag_button_row(self.expanded_dropdown.clone(), &self.tag_names, &tag_count);
+        let tag_buttons = view_tag_button_row(self.expanded_dropdown, &self.tag_names, &tag_count);
 
         let action_buttons = row![
             widget::button(widget::text!("{}", t!("<- Previous")))
@@ -505,9 +504,9 @@ fn preload_list_status_string_pathlist(pathlist: &PathList) -> String {
         .iter()
         .filter(|info| matches!(info.data, PreloadImage::Loading(_)))
         .count();
-    s.push_str(&format!("Loaded: {}/{}", loaded, total));
+    s.push_str(&format!("Loaded: {loaded}/{total}"));
     if loading > 0 {
-        s.push_str(&format!(", Loading: {}", loading));
+        s.push_str(&format!(", Loading: {loading}"));
     }
     s
 }
@@ -592,9 +591,7 @@ fn view_tag_button<'a>(
             widget::button::Status::Pressed => style_pressed,
             widget::button::Status::Disabled => style,
         })
-        .on_press(Message::Sorting(SortingMessage::UserPressedTagButton(
-            tag.clone(),
-        )))
+        .on_press(Message::Sorting(SortingMessage::UserPressedTagButton(*tag)))
         .width(350)
         .height(55);
 
@@ -606,7 +603,7 @@ fn view_tag_button<'a>(
             widget::button::Status::Disabled => style,
         })
         .on_press(Message::Sorting(SortingMessage::UserPressedTagMenu(Some(
-            tag.clone(),
+            *tag,
         ))))
         .width(45)
         .height(55);

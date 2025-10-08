@@ -62,7 +62,7 @@ fn view_action_tag_button(tag: Tag, name: String) -> Element<'static, Message> {
                 background: Some(iced::Background::Color(color)),
                 text_color: Color::WHITE,
                 border: iced::Border {
-                    color: color,
+                    color,
                     width: 1.0,
                     radius: 4.0.into(),
                 },
