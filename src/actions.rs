@@ -1,7 +1,8 @@
 use iced::widget::{self, button, column, container, row, text};
 use iced::{Color, Element};
 
-use crate::{tag_badge_color, Message, Tag, TagNames};
+use crate::sorting::tag_badge_color;
+use crate::{Message, Tag, TagNames};
 
 pub fn view_actions_tab(
     selected_action_tag: &Option<Tag>,

@@ -24,6 +24,7 @@ Run it in the folder you want to sort images
     - Labels
 - [ ] Nicer config screen
 - [ ] Save settings persistently
+- [ ] Preloading images should be Loading, not Out of range
 - [ ] Config for thumbnails, size, above/below/side, amount
 - [ ] Config for shortcuts
 - [ ] Thumbnails adjust to screen size
