@@ -24,6 +24,7 @@ pub struct SortingModel {
     pub expanded_dropdown: Option<Tag>,
     pub editing_tag_name: Option<(Tag, String, widget::text_input::Id)>,
     pub tag_names: TagNames,
+    pub canvas_dimensions: Option<Dim>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,7 @@ pub enum SortingMessage {
     ImagePreloaded(String, ImageData),
     ImagePreloadFailed(String),
     KeyboardEvent(iced::keyboard::Event),
+    CanvasResized(Dim),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
@@ -289,6 +291,11 @@ impl SortingModel {
                 }
                 Effect::None
             }
+            SortingMessage::CanvasResized(dim) => {
+                println!("Canvas resized to: {}x{}", dim.width, dim.height);
+                self.canvas_dimensions = Some(dim);
+                Effect::None
+            }
         }
     }
 
@@ -366,21 +373,33 @@ fn view_image_with_thumbs<'a>(
             let prev_image = model
                 .pathlist
                 .prev()
-                .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false))
+                .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false, false))
                 .unwrap_or(placeholder_text("No previous image", &thumbs_dim).into());
 
-            let image = view_image(model.pathlist.current(), &model.tag_names, img_dim, false);
+            let image = view_image(
+                model.pathlist.current(),
+                &model.tag_names,
+                img_dim,
+                false,
+                true,
+            );
 
             let next_image = model
                 .pathlist
                 .next()
-                .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false))
+                .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false, false))
                 .unwrap_or(placeholder_text("No next image", &thumbs_dim).into());
 
             row![prev_image, image, next_image].into()
         }
         SortingViewStyle::Thumbnails => {
-            let image = view_image(model.pathlist.current(), &model.tag_names, img_dim, false);
+            let image = view_image(
+                model.pathlist.current(),
+                &model.tag_names,
+                img_dim,
+                false,
+                true,
+            );
 
             let num_thumbs = 3;
             let mut thumbs = Vec::new();
@@ -396,7 +415,15 @@ fn view_image_with_thumbs<'a>(
                 let highlight = i == model.pathlist.index as isize;
 
                 let thumb = img
-                    .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), highlight))
+                    .map(|image| {
+                        view_image(
+                            image,
+                            &model.tag_names,
+                            thumbs_dim.clone(),
+                            highlight,
+                            false,
+                        )
+                    })
                     .unwrap_or(placeholder_text("No thumbnail", &thumbs_dim).into());
                 thumbs.push(thumb);
             }
@@ -417,6 +444,7 @@ fn view_image<'a>(
     tag_names: &TagNames,
     dim: Dim,
     highlight: bool,
+    is_main_image: bool,
 ) -> Element<'a, Message> {
     let name_and_color = image.metadata.tag.as_ref().map(|tag| {
         let name = tag_names.get(tag);
@@ -424,7 +452,9 @@ fn view_image<'a>(
         (name.to_owned(), color)
     });
     match &image.data {
-        PreloadImage::Loaded(image) => view_loaded_image(image, name_and_color, dim, highlight),
+        PreloadImage::Loaded(image) => {
+            view_loaded_image(image, name_and_color, dim, highlight, is_main_image)
+        }
         PreloadImage::Loading(path) => placeholder_text(format!("Loading {path}..."), &dim).into(),
         PreloadImage::OutOfRange => placeholder_text("Out of range", &dim).into(),
     }
@@ -435,11 +465,18 @@ fn view_loaded_image(
     name_and_color: Option<(String, iced::Color)>,
     dim: Dim,
     highlight: bool,
+    send_resize_messages: bool,
 ) -> Element<Message> {
-    let pixel_canvas = PixelCanvas::new(image.clone());
-    let canvas_widget = canvas(pixel_canvas)
-        .width(dim.width as f32)
-        .height(dim.height as f32);
+    let pixel_canvas = PixelCanvas::new(image.clone(), send_resize_messages);
+    let (w, h) = if !send_resize_messages {
+        (
+            Length::Fixed(dim.width as f32),
+            Length::Fixed(dim.height as f32),
+        )
+    } else {
+        (Length::Fill, Length::Fill)
+    };
+    let canvas_widget = canvas(pixel_canvas).width(w).height(h);
 
     let image_with_border = if highlight {
         widget::container(canvas_widget)

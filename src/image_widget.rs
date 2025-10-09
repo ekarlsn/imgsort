@@ -14,11 +14,15 @@ pub enum PixelCanvasMessage {
 
 pub struct PixelCanvas {
     image_data: ImageData,
+    send_resize_messages: bool,
 }
 
 impl PixelCanvas {
-    pub fn new(image_data: ImageData) -> Self {
-        Self { image_data }
+    pub fn new(image_data: ImageData, send_resize_messages: bool) -> Self {
+        Self {
+            image_data,
+            send_resize_messages,
+        }
     }
 }
 
@@ -90,13 +94,16 @@ impl canvas::Program<Message> for PixelCanvas {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> (canvas::event::Status, Option<Message>) {
-        // Notify about size changes
-        (
-            canvas::event::Status::Ignored,
+        // Only send size change messages if enabled
+        let message = if self.send_resize_messages {
             Some(Message::PixelCanvas(PixelCanvasMessage::CanvasSized(Dim {
                 width: bounds.width as u32,
                 height: bounds.height as u32,
-            }))),
-        )
+            })))
+        } else {
+            None
+        };
+
+        (canvas::event::Status::Ignored, message)
     }
 }

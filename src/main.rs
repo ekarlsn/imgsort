@@ -319,6 +319,7 @@ impl Model {
                     expanded_dropdown: None,
                     editing_tag_name: None,
                     tag_names: TagNames::new(),
+                    canvas_dimensions: None,
                 });
             }
         };
@@ -376,10 +377,14 @@ impl Model {
             Message::Settings(settings_message) => {
                 self.settings.update(settings_message, &mut self.config)
             }
-            Message::PixelCanvas(_pixel_canvas_message) => {
-                // Handle pixel canvas messages if needed
-                Effect::None
-            }
+            Message::PixelCanvas(pixel_canvas_message) => match &mut self.state {
+                ModelState::Sorting(model) => match pixel_canvas_message {
+                    PixelCanvasMessage::CanvasSized(dim) => {
+                        model.update(SortingMessage::CanvasResized(dim), &self.config)
+                    }
+                },
+                _ => Effect::None,
+            },
         };
 
         debug!("Effect: {effect:?}");
