@@ -10,8 +10,11 @@ use log::debug;
 rust_i18n::i18n!("locales");
 
 mod actions;
+mod image_widget;
 mod settings;
 mod sorting;
+
+use image_widget::PixelCanvasMessage;
 
 use settings::{SettingsMessage, SettingsModel};
 use sorting::{SortingMessage, SortingModel, Tag, TagNames};
@@ -128,6 +131,7 @@ enum Message {
     KeyboardEventOccurred(iced::keyboard::Event),
     Settings(SettingsMessage),
     Sorting(SortingMessage),
+    PixelCanvas(PixelCanvasMessage),
 }
 
 #[derive(Debug)]
@@ -371,6 +375,10 @@ impl Model {
             },
             Message::Settings(settings_message) => {
                 self.settings.update(settings_message, &mut self.config)
+            }
+            Message::PixelCanvas(_pixel_canvas_message) => {
+                // Handle pixel canvas messages if needed
+                Effect::None
             }
         };
 

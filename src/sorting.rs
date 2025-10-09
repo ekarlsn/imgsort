@@ -1,10 +1,11 @@
-use iced::widget::{self, button, center, column, row, stack};
+use iced::widget::{self, button, canvas, center, column, row, stack};
 use iced::{Color, Element, Length};
 use iced_aw::{drop_down, DropDown};
 use itertools::Itertools;
 use rust_i18n::t;
 use std::collections::HashMap;
 
+use crate::image_widget::PixelCanvas;
 use crate::{Config, Effect, ImageData, ImageInfo, Message, PathList, PreloadImage};
 
 // Constants
@@ -64,7 +65,7 @@ pub enum SortingViewStyle {
     BeforeAfter,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Dim {
     pub width: u32,
     pub height: u32,
@@ -435,15 +436,13 @@ fn view_loaded_image(
     dim: Dim,
     highlight: bool,
 ) -> Element<Message> {
-    let mut img = iced::widget::image::viewer(widget::image::Handle::from_rgba(
-        image.width,
-        image.height,
-        image.data.clone(),
-    ));
-    img = img.width(dim.width as f32).height(dim.height as f32);
+    let pixel_canvas = PixelCanvas::new(image.clone());
+    let canvas_widget = canvas(pixel_canvas)
+        .width(dim.width as f32)
+        .height(dim.height as f32);
 
     let image_with_border = if highlight {
-        widget::container(img)
+        widget::container(canvas_widget)
             .style(|_: &iced::Theme| {
                 widget::container::Style::default().border(iced::Border {
                     radius: iced::border::radius(5),
@@ -453,7 +452,7 @@ fn view_loaded_image(
             })
             .padding(3)
     } else {
-        widget::container(img)
+        widget::container(canvas_widget)
     };
 
     let badge: Option<Element<Message>> = name_and_color.map(|(name, mut color)| {
