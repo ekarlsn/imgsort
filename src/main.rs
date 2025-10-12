@@ -148,7 +148,7 @@ impl PathList {
             .iter()
             .map(|path| ImageInfo {
                 path: path.clone(),
-                data: PreloadImage::OutOfRange,
+                data: PreloadImage::Loading(path.clone()),
                 metadata: Metadata { tag: None },
             })
             .collect();
