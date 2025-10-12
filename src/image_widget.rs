@@ -13,12 +13,12 @@ pub enum PixelCanvasMessage {
 }
 
 pub struct PixelCanvas {
-    image_data: ImageData,
+    image_data: Option<ImageData>,
     send_resize_messages: bool,
 }
 
 impl PixelCanvas {
-    pub fn new(image_data: ImageData, send_resize_messages: bool) -> Self {
+    pub fn new(image_data: Option<ImageData>, send_resize_messages: bool) -> Self {
         Self {
             image_data,
             send_resize_messages,
@@ -39,7 +39,12 @@ impl canvas::Program<Message> for PixelCanvas {
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
 
-        let image_data = &self.image_data;
+        let image_data = if let Some(image_data) = &self.image_data {
+            image_data
+        } else {
+            return vec![frame.into_geometry()];
+        };
+
         // Calculate scaling to fit the image within bounds while maintaining aspect ratio
         let image_aspect = image_data.width as f32 / image_data.height as f32;
         let bounds_aspect = bounds.width / bounds.height;

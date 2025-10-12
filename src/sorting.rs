@@ -461,13 +461,13 @@ fn view_image<'a>(
 }
 
 fn view_loaded_image(
-    image: &ImageData,
+    image: Option<&ImageData>,
     name_and_color: Option<(String, iced::Color)>,
     dim: Dim,
     highlight: bool,
     send_resize_messages: bool,
 ) -> Element<Message> {
-    let pixel_canvas = PixelCanvas::new(image.clone(), send_resize_messages);
+    let pixel_canvas = PixelCanvas::new(image.map(|image| image.clone()), send_resize_messages);
     let (w, h) = if !send_resize_messages {
         (
             Length::Fixed(dim.width as f32),
