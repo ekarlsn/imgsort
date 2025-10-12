@@ -453,9 +453,11 @@ fn view_image<'a>(
     });
     match &image.data {
         PreloadImage::Loaded(image) => {
-            view_loaded_image(image, name_and_color, dim, highlight, is_main_image)
+            view_loaded_image(Some(image), name_and_color, dim, highlight, is_main_image)
         }
-        PreloadImage::Loading(path) => placeholder_text(format!("Loading {path}..."), &dim).into(),
+        PreloadImage::Loading(path) => {
+            view_loaded_image(None, name_and_color, dim, highlight, is_main_image)
+        }
         PreloadImage::OutOfRange => placeholder_text("Out of range", &dim).into(),
     }
 }
