@@ -18,15 +18,6 @@ pub const TAG3: Tag = Tag::Tag3;
 pub const TAG4: Tag = Tag::Tag4;
 pub const TAG5: Tag = Tag::Tag5;
 
-#[derive(Debug)]
-pub struct SortingModel {
-    pub pathlist: PathList,
-    pub expanded_dropdown: Option<Tag>,
-    pub editing_tag_name: Option<(Tag, String, widget::text_input::Id)>,
-    pub tag_names: TagNames,
-    pub canvas_dimensions: Option<Dim>,
-}
-
 #[derive(Debug, Clone)]
 pub enum SortingMessage {
     UserPressedNextImage,
@@ -38,8 +29,8 @@ pub enum SortingMessage {
     UserPressedCancelRenameTag,
     UserEditTagName(String),
     UserPressedTagMenu(Option<Tag>),
-    ImagePreloaded(String, ImageData),
-    ImagePreloadFailed(String),
+    ImagePreloaded(crate::task_manager::TaskId, String, ImageData),
+    ImagePreloadFailed(crate::task_manager::TaskId, String),
     KeyboardEvent(iced::keyboard::Event),
     CanvasResized(Dim),
 }
@@ -61,13 +52,7 @@ pub struct TagNames {
     pub tag4: String,
 }
 
-pub enum SortingViewStyle {
-    Thumbnails,
-    #[allow(unused)]
-    BeforeAfter,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dim {
     pub width: u32,
     pub height: u32,
@@ -140,11 +125,12 @@ pub fn keybind_char_to_tag(c: &str) -> Option<Tag> {
     }
 }
 
-fn is_typing_action(model: &SortingModel) -> bool {
-    model.editing_tag_name.is_some()
-}
+fn user_pressed_previous_image(model: &mut crate::Model) -> Effect {
+    // Check if pathlist is empty
+    if model.pathlist.paths.is_empty() {
+        return Effect::None;
+    }
 
-fn user_pressed_previous_image(model: &mut SortingModel) -> Effect {
     // We're already at the far left
     if model.pathlist.index == 0 {
         return Effect::None;
@@ -156,8 +142,8 @@ fn user_pressed_previous_image(model: &mut SortingModel) -> Effect {
         let new_preload_index =
             (model.pathlist.index as isize - model.pathlist.preload_back_num as isize) as usize;
         let info = &mut model.pathlist.paths[new_preload_index];
-        if matches!(info.data, PreloadImage::OutOfRange) {
-            info.data = PreloadImage::Loading(info.path.clone());
+        if matches!(info.data, crate::PreloadImage::OutOfRange) {
+            info.data = crate::PreloadImage::Loading(info.path.clone());
             return Effect::PreloadImages(vec![info.path.clone()]);
         }
     }
@@ -165,7 +151,12 @@ fn user_pressed_previous_image(model: &mut SortingModel) -> Effect {
     Effect::None
 }
 
-fn user_pressed_next_image(model: &mut SortingModel) -> Effect {
+fn user_pressed_next_image(model: &mut crate::Model) -> Effect {
+    // Check if pathlist is empty
+    if model.pathlist.paths.is_empty() {
+        return Effect::None;
+    }
+
     // We're already at the far right
     if model.pathlist.index == model.pathlist.paths.len() - 1 {
         return Effect::None;
@@ -176,8 +167,8 @@ fn user_pressed_next_image(model: &mut SortingModel) -> Effect {
         let new_preload_index =
             (model.pathlist.index as isize + model.pathlist.preload_front_num as isize) as usize;
         let info = &mut model.pathlist.paths[new_preload_index];
-        if matches!(info.data, PreloadImage::OutOfRange) {
-            info.data = PreloadImage::Loading(info.path.clone());
+        if matches!(info.data, crate::PreloadImage::OutOfRange) {
+            info.data = crate::PreloadImage::Loading(info.path.clone());
             return Effect::PreloadImages(vec![info.path.clone()]);
         }
     }
@@ -203,239 +194,13 @@ fn schedule_next_preload_image_after_one_finished(pathlist: &PathList, _config: 
     Effect::None
 }
 
-fn tag_and_move_on(model: &mut SortingModel, tag: Tag) -> Effect {
+fn tag_and_move_on(model: &mut crate::Model, tag: Tag) -> Effect {
+    if model.pathlist.paths.is_empty() {
+        return Effect::None;
+    }
+
     model.pathlist.current_mut().metadata.tag = Some(tag);
     user_pressed_next_image(model)
-}
-
-impl SortingModel {
-    pub fn update(&mut self, message: SortingMessage, config: &Config) -> Effect {
-        match message {
-            SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(self),
-            SortingMessage::UserPressedNextImage => user_pressed_next_image(self),
-            SortingMessage::ImagePreloadFailed(_path) => Effect::None,
-            SortingMessage::ImagePreloaded(path, image) => {
-                self.pathlist
-                    .paths
-                    .iter_mut()
-                    .find(|info| info.path == path)
-                    .map(|info| {
-                        info.data = PreloadImage::Loaded(image);
-                        info
-                    });
-
-                schedule_next_preload_image_after_one_finished(&self.pathlist, config)
-            }
-            SortingMessage::KeyboardEvent(_) if is_typing_action(self) => Effect::None,
-            SortingMessage::KeyboardEvent(event) => match event {
-                iced::keyboard::Event::KeyPressed { key, modifiers, .. } => match key.as_ref() {
-                    iced::keyboard::Key::Character("h")
-                    | iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => {
-                        user_pressed_previous_image(self)
-                    }
-                    iced::keyboard::Key::Character("t" | "l")
-                    | iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight) => {
-                        user_pressed_next_image(self)
-                    }
-                    iced::keyboard::Key::Character(c)
-                        if !modifiers.control() && TAGGING_CHARS.contains(c) =>
-                    {
-                        let tag = keybind_char_to_tag(c).unwrap();
-                        // Any tagging character
-                        tag_and_move_on(self, tag)
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) => {
-                        tag_and_move_on(self, TAG5)
-                    }
-                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace) => {
-                        self.pathlist.paths[self.pathlist.index].metadata.tag = None;
-                        Effect::None
-                    }
-                    _ => Effect::None,
-                },
-                _ => Effect::None,
-            },
-            SortingMessage::UserPressedTagButton(tag) => {
-                tag_and_move_on(self, tag);
-                Effect::None
-            }
-            SortingMessage::UserPressedRenameTag(tag) => {
-                let id = widget::text_input::Id::unique();
-                self.editing_tag_name = Some((tag, "".to_owned(), id.clone()));
-                self.expanded_dropdown = None;
-                Effect::FocusElement(id)
-            }
-            SortingMessage::UserPressedSubmitRenameTag => {
-                let (tag, new_tag_name, _) = self.editing_tag_name.take().unwrap();
-                self.tag_names.update(tag, new_tag_name);
-                Effect::None
-            }
-            SortingMessage::UserPressedCancelRenameTag => {
-                self.editing_tag_name = None;
-                Effect::None
-            }
-            SortingMessage::UserEditTagName(text) => {
-                self.editing_tag_name.as_mut().unwrap().1 = text;
-
-                Effect::None
-            }
-            SortingMessage::UserPressedMoveTag(tag) => {
-                self.expanded_dropdown = None;
-                Effect::MoveImagesWithTag(tag)
-            }
-            SortingMessage::UserPressedTagMenu(maybe_tag) => {
-                if self.expanded_dropdown.as_ref() == maybe_tag.as_ref() {
-                    self.expanded_dropdown = None;
-                } else {
-                    self.expanded_dropdown = maybe_tag;
-                }
-                Effect::None
-            }
-            SortingMessage::CanvasResized(dim) => {
-                println!("Canvas resized to: {}x{}", dim.width, dim.height);
-                if (self.canvas_dimensions.as_ref() != Some(&dim)) {
-                    self.canvas_dimensions = Some(dim);
-                    // Start the preloading now
-                    Effect::LsDir
-                } else {
-                    Effect::None
-                }
-            }
-        }
-    }
-
-    pub fn view<'a>(&'a self, config: &'a Config) -> Element<'a, Message> {
-        let sorting_view_style = SortingViewStyle::Thumbnails;
-
-        let main_image_view = view_image_with_thumbs(sorting_view_style, self, config);
-
-        let preload_status_string = preload_list_status_string_pathlist(&self.pathlist);
-
-        let mut tag_count = HashMap::new();
-
-        for metadata in self.pathlist.paths.iter().map(|info| &info.metadata) {
-            if let Some(tag) = metadata.tag {
-                let count = tag_count.entry(tag).or_insert(0);
-                *count += 1;
-            }
-        }
-
-        let status_text = widget::text(format!(
-            "({index}/{total}) {path}",
-            index = self.pathlist.index + 1,
-            total = self.pathlist.paths.len(),
-            path = self.pathlist.current().path,
-        ));
-
-        let tag_buttons = view_tag_button_row(self.expanded_dropdown, &self.tag_names, &tag_count);
-
-        let action_buttons = row![
-            widget::button(widget::text!("{}", t!("<- Previous")))
-                .on_press(Message::Sorting(SortingMessage::UserPressedPreviousImage))
-                .padding(10),
-            widget::button(widget::text!("{}", t!("Next ->")))
-                .on_press(Message::Sorting(SortingMessage::UserPressedNextImage))
-                .padding(10),
-            widget::button(widget::text!("{}", t!("Select Folder")))
-                .on_press(Message::UserPressedSelectFolder)
-                .padding(10),
-        ];
-
-        let content = column![
-            main_image_view,
-            status_text,
-            tag_buttons,
-            action_buttons,
-            widget::text(preload_status_string),
-        ];
-
-        let content = center(content);
-
-        let popup = self
-            .editing_tag_name
-            .as_ref()
-            .map(|(_, text, id)| view_rename_tag_modal(text.as_str(), id.clone()));
-
-        stack![content].push_maybe(popup).into()
-    }
-}
-
-fn view_image_with_thumbs<'a>(
-    sorting_view_style: SortingViewStyle,
-    model: &'a SortingModel,
-    config: &'a Config,
-) -> Element<'a, Message> {
-    let img_dim = Dim {
-        width: config.scale_down_size.0,
-        height: config.scale_down_size.1,
-    };
-    let thumbs_dim = Dim {
-        width: 100,
-        height: 100,
-    };
-    match sorting_view_style {
-        SortingViewStyle::BeforeAfter => {
-            let prev_image = model
-                .pathlist
-                .prev()
-                .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false, false))
-                .unwrap_or(placeholder_text("No previous image", &thumbs_dim).into());
-
-            let image = view_image(
-                model.pathlist.current(),
-                &model.tag_names,
-                img_dim,
-                false,
-                true,
-            );
-
-            let next_image = model
-                .pathlist
-                .next()
-                .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false, false))
-                .unwrap_or(placeholder_text("No next image", &thumbs_dim).into());
-
-            row![prev_image, image, next_image].into()
-        }
-        SortingViewStyle::Thumbnails => {
-            let image = view_image(
-                model.pathlist.current(),
-                &model.tag_names,
-                img_dim,
-                false,
-                true,
-            );
-
-            let num_thumbs = 3;
-            let mut thumbs = Vec::new();
-            for i in (model.pathlist.index as isize) - num_thumbs
-                ..=(model.pathlist.index as isize) + num_thumbs
-            {
-                let img = if i >= 0 && i < model.pathlist.paths.len() as isize {
-                    Some(&model.pathlist.paths[i as usize])
-                } else {
-                    None
-                };
-
-                let highlight = i == model.pathlist.index as isize;
-
-                let thumb = img
-                    .map(|image| {
-                        view_image(
-                            image,
-                            &model.tag_names,
-                            thumbs_dim.clone(),
-                            highlight,
-                            false,
-                        )
-                    })
-                    .unwrap_or(placeholder_text("No thumbnail", &thumbs_dim).into());
-                thumbs.push(thumb);
-            }
-
-            column![widget::Row::from_vec(thumbs), image].into()
-        }
-    }
 }
 
 fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a> {
@@ -460,7 +225,7 @@ fn view_image<'a>(
         PreloadImage::Loaded(image) => {
             view_loaded_image(Some(image), name_and_color, dim, highlight, is_main_image)
         }
-        PreloadImage::Loading(path) => {
+        PreloadImage::Loading(_path) => {
             view_loaded_image(None, name_and_color, dim, highlight, is_main_image)
         }
         PreloadImage::OutOfRange => placeholder_text("Out of range", &dim).into(),
@@ -534,7 +299,10 @@ fn view_rename_tag_modal(text: &str, id: widget::text_input::Id) -> Element<Mess
         .into()
 }
 
-fn preload_list_status_string_pathlist(pathlist: &PathList) -> String {
+fn preload_list_status_string_pathlist(
+    pathlist: &PathList,
+    task_manager: &crate::task_manager::TaskManager,
+) -> String {
     let mut s = String::new();
     let total = pathlist.paths.len();
     let loaded = pathlist
@@ -547,9 +315,19 @@ fn preload_list_status_string_pathlist(pathlist: &PathList) -> String {
         .iter()
         .filter(|info| matches!(info.data, PreloadImage::Loading(_)))
         .count();
+
+    // Get task manager information
+    let (ls_dir_tasks, preload_tasks) = task_manager.get_task_counts();
+
     s.push_str(&format!("Loaded: {loaded}/{total}"));
     if loading > 0 {
         s.push_str(&format!(", Loading: {loading}"));
+    }
+    if preload_tasks > 0 {
+        s.push_str(&format!(", In flight: {preload_tasks}"));
+    }
+    if ls_dir_tasks > 0 {
+        s.push_str(&format!(", Dir loading: {ls_dir_tasks}"));
     }
     s
 }
@@ -672,4 +450,230 @@ fn tag_dropdown_button(text: &str, message: SortingMessage) -> Element<Message> 
         .on_press(Message::Sorting(message))
         .width(250)
         .into()
+}
+
+// Public functions for flattened sorting model
+pub fn update_sorting_model(
+    model: &mut crate::Model,
+    message: SortingMessage,
+    config: &crate::Config,
+) -> crate::Effect {
+    match message {
+        SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
+        SortingMessage::UserPressedNextImage => user_pressed_next_image(model),
+        SortingMessage::ImagePreloadFailed(_task_id, _path) => crate::Effect::None,
+        SortingMessage::ImagePreloaded(_task_id, path, image) => {
+            model
+                .pathlist
+                .paths
+                .iter_mut()
+                .find(|info| info.path == path)
+                .map(|info| {
+                    info.data = crate::PreloadImage::Loaded(image);
+                    info
+                });
+
+            schedule_next_preload_image_after_one_finished(&model.pathlist, config)
+        }
+        SortingMessage::KeyboardEvent(_) if is_typing_action_flat(model) => crate::Effect::None,
+        SortingMessage::KeyboardEvent(event) => match event {
+            iced::keyboard::Event::KeyPressed { key, modifiers, .. } => match key.as_ref() {
+                iced::keyboard::Key::Character("h")
+                | iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => {
+                    user_pressed_previous_image(model)
+                }
+                iced::keyboard::Key::Character("t" | "l")
+                | iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight) => {
+                    user_pressed_next_image(model)
+                }
+                iced::keyboard::Key::Character(c)
+                    if !modifiers.control() && TAGGING_CHARS.contains(c) =>
+                {
+                    let tag = keybind_char_to_tag(c).unwrap();
+                    // Any tagging character
+                    tag_and_move_on(model, tag)
+                }
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) => {
+                    tag_and_move_on(model, TAG5)
+                }
+                iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace) => {
+                    if !model.pathlist.paths.is_empty() {
+                        model.pathlist.paths[model.pathlist.index].metadata.tag = None;
+                    }
+                    crate::Effect::None
+                }
+                _ => crate::Effect::None,
+            },
+            _ => crate::Effect::None,
+        },
+        SortingMessage::UserPressedTagButton(tag) => {
+            tag_and_move_on(model, tag);
+            crate::Effect::None
+        }
+        SortingMessage::UserPressedRenameTag(tag) => {
+            let id = widget::text_input::Id::unique();
+            model.editing_tag_name = Some((tag, "".to_owned(), id.clone()));
+            model.expanded_dropdown = None;
+            crate::Effect::FocusElement(id)
+        }
+        SortingMessage::UserPressedSubmitRenameTag => {
+            let (tag, new_tag_name, _) = model.editing_tag_name.take().unwrap();
+            model.tag_names.update(tag, new_tag_name);
+            crate::Effect::None
+        }
+        SortingMessage::UserPressedCancelRenameTag => {
+            model.editing_tag_name = None;
+            crate::Effect::None
+        }
+        SortingMessage::UserEditTagName(text) => {
+            model.editing_tag_name.as_mut().unwrap().1 = text;
+            crate::Effect::None
+        }
+        SortingMessage::UserPressedMoveTag(tag) => {
+            model.expanded_dropdown = None;
+            crate::Effect::MoveImagesWithTag(tag)
+        }
+        SortingMessage::UserPressedTagMenu(maybe_tag) => {
+            if model.expanded_dropdown.as_ref() == maybe_tag.as_ref() {
+                model.expanded_dropdown = None;
+            } else {
+                model.expanded_dropdown = maybe_tag;
+            }
+            crate::Effect::None
+        }
+        SortingMessage::CanvasResized(dim) => {
+            println!("Canvas resized to: {}x{}", dim.width, dim.height);
+            if model.canvas_dimensions.as_ref() != Some(&dim) {
+                model.canvas_dimensions = Some(dim);
+                // Start the preloading now
+                crate::Effect::LsDir
+            } else {
+                crate::Effect::None
+            }
+        }
+    }
+}
+
+pub fn view_sorting_model<'a>(
+    model: &'a crate::Model,
+    config: &'a crate::Config,
+    task_manager: &'a crate::task_manager::TaskManager,
+) -> iced::Element<'a, crate::Message> {
+    // Check if pathlist is empty to avoid panics
+    if model.pathlist.paths.is_empty() {
+        return widget::text("No images found").into();
+    }
+
+    let main_image_view = view_image_with_thumbs_flat(model, config);
+
+    let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
+
+    let mut tag_count = std::collections::HashMap::new();
+
+    for metadata in model.pathlist.paths.iter().map(|info| &info.metadata) {
+        if let Some(tag) = metadata.tag {
+            let count = tag_count.entry(tag).or_insert(0);
+            *count += 1;
+        }
+    }
+
+    let status_text = widget::text(format!(
+        "({index}/{total}) {path}",
+        index = model.pathlist.index + 1,
+        total = model.pathlist.paths.len(),
+        path = model.pathlist.current().path,
+    ));
+
+    let tag_buttons = view_tag_button_row(model.expanded_dropdown, &model.tag_names, &tag_count);
+
+    let action_buttons = row![
+        widget::button(widget::text!("{}", t!("<- Previous")))
+            .on_press(crate::Message::Sorting(
+                SortingMessage::UserPressedPreviousImage
+            ))
+            .padding(10),
+        widget::button(widget::text!("{}", t!("Next ->")))
+            .on_press(crate::Message::Sorting(
+                SortingMessage::UserPressedNextImage
+            ))
+            .padding(10),
+        widget::button(widget::text!("{}", t!("Select Folder")))
+            .on_press(crate::Message::UserPressedSelectFolder)
+            .padding(10),
+    ];
+
+    let content = column![
+        main_image_view,
+        status_text,
+        tag_buttons,
+        action_buttons,
+        widget::text(preload_status_string),
+    ];
+
+    let content = center(content);
+
+    let popup = model
+        .editing_tag_name
+        .as_ref()
+        .map(|(_, text, id)| view_rename_tag_modal(text.as_str(), id.clone()));
+
+    stack![content].push_maybe(popup).into()
+}
+
+fn is_typing_action_flat(model: &crate::Model) -> bool {
+    model.editing_tag_name.is_some()
+}
+
+fn view_image_with_thumbs_flat<'a>(
+    model: &'a crate::Model,
+    config: &'a crate::Config,
+) -> Element<'a, crate::Message> {
+    let img_dim = Dim {
+        width: config.scale_down_size.0,
+        height: config.scale_down_size.1,
+    };
+
+    // Prev image thumbnail
+    let prev = if let Some(img_info) = model.pathlist.prev() {
+        view_image(img_info, &model.tag_names, img_dim, false, false)
+    } else {
+        placeholder_text("No previous image", &img_dim).into()
+    };
+
+    // Current main image
+    let image = {
+        let current = model.pathlist.current();
+        let main_img_dim = model.canvas_dimensions.unwrap_or(img_dim);
+        view_image(current, &model.tag_names, main_img_dim, true, true)
+    };
+
+    // Next image thumbnail
+    let next = if let Some(img_info) = model.pathlist.next() {
+        view_image(img_info, &model.tag_names, img_dim, false, false)
+    } else {
+        placeholder_text("No next image", &img_dim).into()
+    };
+
+    // Build the layout
+    let image_row = row![
+        widget::container(prev).width(Length::Fill),
+        widget::container(image).width(Length::Fill),
+        widget::container(next).width(Length::Fill),
+    ]
+    .spacing(20);
+
+    let image_container = widget::container(image_row)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    let current_image_data = match &model.pathlist.current().data {
+        crate::PreloadImage::Loaded(data) => Some(data),
+        _ => None,
+    };
+    let pixel_canvas = crate::image_widget::PixelCanvas::new(current_image_data.cloned(), true);
+    let canvas_widget = canvas(pixel_canvas)
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    stack![image_container, canvas_widget].into()
 }

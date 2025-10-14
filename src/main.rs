@@ -13,11 +13,13 @@ mod actions;
 mod image_widget;
 mod settings;
 mod sorting;
+mod task_manager;
 
 use image_widget::PixelCanvasMessage;
 
 use settings::{SettingsMessage, SettingsModel};
-use sorting::{SortingMessage, SortingModel, Tag, TagNames};
+use sorting::{SortingMessage, Tag, TagNames};
+use task_manager::{TaskId, TaskManager, TaskType};
 
 use crate::sorting::Dim;
 
@@ -44,7 +46,9 @@ pub fn main() -> iced::Result {
         ),
         simplelog::WriteLogger::new(
             simplelog::LevelFilter::Debug,
-            simplelog::Config::default(),
+            simplelog::ConfigBuilder::new()
+                .add_filter_allow_str("imgsort")
+                .build(),
             std::fs::File::create("imgsort.log").unwrap(),
         ),
     ])
@@ -71,13 +75,20 @@ struct Model {
     settings: SettingsModel,
     active_tab: TabId,
     selected_action_tag: Option<Tag>,
+    task_manager: TaskManager,
+    // Flattened sorting model fields
+    pathlist: PathList,
+    expanded_dropdown: Option<Tag>,
+    editing_tag_name: Option<(Tag, String, widget::text_input::Id)>,
+    tag_names: TagNames,
+    canvas_dimensions: Option<Dim>,
 }
 
 #[derive(Debug)]
 enum ModelState {
     LoadingListDir,
     EmptyDirectory,
-    Sorting(SortingModel),
+    Sorting,
 }
 
 #[derive(Debug, Clone)]
@@ -129,7 +140,9 @@ enum Message {
     UserSelectedTab(TabId),
     UserPressedActionTag(Tag),
     UserPressedActionBack,
-    ListDirCompleted(Vec<String>),
+    ListDirCompleted(TaskId, Vec<String>),
+    ImagePreloadedWithTask(TaskId, String, ImageData),
+    ImagePreloadFailedWithTask(TaskId, String),
     KeyboardEventOccurred(iced::keyboard::Event),
     Settings(SettingsMessage),
     Sorting(SortingMessage),
@@ -244,6 +257,12 @@ impl Model {
                 settings: SettingsModel::new(&config),
                 active_tab: TabId::Main,
                 selected_action_tag: None,
+                task_manager: TaskManager::new(),
+                pathlist: PathList::new(vec![], 0, 0),
+                expanded_dropdown: None,
+                editing_tag_name: None,
+                tag_names: TagNames::new(),
+                canvas_dimensions: None,
             },
             Effect::LsDir,
         )
@@ -271,16 +290,16 @@ impl Model {
     }
 
     fn go_to_sorting_model(&mut self, paths: Vec<String>) -> Effect {
-        match &mut self.state {
-            ModelState::Sorting(sorting) => {
+        match self.state {
+            ModelState::Sorting => {
                 debug!("In sorting model, received new lsdir, updating");
 
                 // Pathlist
                 let index: usize = {
-                    if let Some(previous_image) = sorting
+                    if let Some(previous_image) = self
                         .pathlist
                         .paths
-                        .get(sorting.pathlist.index)
+                        .get(self.pathlist.index)
                         .map(|info| &info.path)
                     {
                         paths.iter().position(|p| p == previous_image).unwrap_or(0)
@@ -296,39 +315,35 @@ impl Model {
                         path: path.clone(),
                         data: PreloadImage::OutOfRange,
                         metadata: Metadata {
-                            tag: sorting.pathlist.tag_of(path),
+                            tag: self.pathlist.tag_of(path),
                         },
                     })
                     .collect();
 
-                sorting.pathlist = PathList {
+                self.pathlist = PathList {
                     index,
                     paths,
-                    preload_back_num: sorting.pathlist.preload_back_num,
-                    preload_front_num: sorting.pathlist.preload_front_num,
+                    preload_back_num: self.pathlist.preload_back_num,
+                    preload_front_num: self.pathlist.preload_front_num,
                 };
             }
 
             _ => {
                 debug!("Going to new sorting model");
 
-                self.state = ModelState::Sorting(SortingModel {
-                    pathlist: PathList::new(
-                        paths.clone(),
-                        self.config.preload_back_num,
-                        self.config.preload_front_num,
-                    ),
-                    expanded_dropdown: None,
-                    editing_tag_name: None,
-                    tag_names: TagNames::new(),
-                    canvas_dimensions: None,
-                });
+                self.state = ModelState::Sorting;
+                self.pathlist = PathList::new(
+                    paths.clone(),
+                    self.config.preload_back_num,
+                    self.config.preload_front_num,
+                );
+                self.expanded_dropdown = None;
+                self.editing_tag_name = None;
+                self.tag_names = TagNames::new();
+                self.canvas_dimensions = None;
             }
         };
-        let ModelState::Sorting(sorting_model) = &self.state else {
-            panic!()
-        };
-        let preload_images = sorting_model.pathlist.get_initial_preload_images();
+        let preload_images = self.pathlist.get_initial_preload_images();
 
         Effect::PreloadImages(preload_images)
     }
@@ -338,7 +353,39 @@ impl Model {
     }
 
     fn update_with_task(&mut self, message: Message) -> Task<Message> {
-        effect_to_task(self.update(message), self, self.config.clone())
+        let effect = self.update(message);
+
+        // Handle task tracking for new effects
+        match effect {
+            Effect::LsDir => {
+                let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
+                let (task_id, task) = self
+                    .task_manager
+                    .start_cancellable_task(TaskType::LsDir, future);
+
+                task.map(move |res| match res {
+                    Ok(paths) => Message::ListDirCompleted(task_id, paths),
+                    Err(_) => panic!("Could not list directory"),
+                })
+            }
+            Effect::PreloadImages(paths) => match self.state {
+                ModelState::Sorting => {
+                    if let Some(dim) = &self.canvas_dimensions {
+                        preload_images_task(
+                            paths,
+                            dim.clone(),
+                            self.config.clone(),
+                            &mut self.task_manager,
+                        )
+                    } else {
+                        debug!("No canvas dimensions available for preloading");
+                        Task::none()
+                    }
+                }
+                _ => Task::none(),
+            },
+            _ => effect_to_task(effect, &self, self.config.clone()),
+        }
     }
 
     fn update(&mut self, message: Message) -> Effect {
@@ -358,7 +405,9 @@ impl Model {
                 Effect::None
             }
             Message::UserPressedSelectFolder => Effect::None,
-            Message::ListDirCompleted(paths) => {
+            Message::ListDirCompleted(task_id, paths) => {
+                self.task_manager.complete_task(task_id);
+                debug!("Directory listing completed for task {:?}", task_id);
                 if paths.is_empty() {
                     self.state = ModelState::EmptyDirectory;
                     Effect::None
@@ -366,23 +415,41 @@ impl Model {
                     self.go_to_sorting_model(paths)
                 }
             }
-            Message::KeyboardEventOccurred(event) => match &mut self.state {
-                ModelState::Sorting(model) => {
-                    model.update(SortingMessage::KeyboardEvent(event), &self.config)
+            Message::ImagePreloadedWithTask(task_id, path, image) => {
+                self.task_manager.complete_task(task_id);
+                debug!("Image preload completed for task {:?}", task_id);
+                match self.state {
+                    ModelState::Sorting => {
+                        self.update_sorting(SortingMessage::ImagePreloaded(task_id, path, image))
+                    }
+                    _ => Effect::None,
                 }
+            }
+            Message::ImagePreloadFailedWithTask(task_id, path) => {
+                self.task_manager.complete_task(task_id);
+                debug!("Image preload failed for task {:?}", task_id);
+                match self.state {
+                    ModelState::Sorting => {
+                        self.update_sorting(SortingMessage::ImagePreloadFailed(task_id, path))
+                    }
+                    _ => Effect::None,
+                }
+            }
+            Message::KeyboardEventOccurred(event) => match self.state {
+                ModelState::Sorting => self.update_sorting(SortingMessage::KeyboardEvent(event)),
                 _ => Effect::None,
             },
-            Message::Sorting(sorting_message) => match &mut self.state {
-                ModelState::Sorting(model) => model.update(sorting_message, &self.config),
+            Message::Sorting(sorting_message) => match self.state {
+                ModelState::Sorting => self.update_sorting(sorting_message),
                 _ => Effect::None,
             },
             Message::Settings(settings_message) => {
                 self.settings.update(settings_message, &mut self.config)
             }
-            Message::PixelCanvas(pixel_canvas_message) => match &mut self.state {
-                ModelState::Sorting(model) => match pixel_canvas_message {
+            Message::PixelCanvas(pixel_canvas_message) => match self.state {
+                ModelState::Sorting => match pixel_canvas_message {
                     PixelCanvasMessage::CanvasSized(dim) => {
-                        model.update(SortingMessage::CanvasResized(dim), &self.config)
+                        self.update_sorting(SortingMessage::CanvasResized(dim))
                     }
                 },
                 _ => Effect::None,
@@ -394,14 +461,21 @@ impl Model {
     }
 
     fn view(&self) -> Element<Message> {
-        let main_content = match &self.state {
-            ModelState::Sorting(model) => model.view(&self.config),
-            ModelState::LoadingListDir => widget::text("Loading...").into(),
+        let main_content = match self.state {
+            ModelState::Sorting => self.view_sorting(),
+            ModelState::LoadingListDir => {
+                let loading_text = if self.task_manager.is_loading() {
+                    self.task_manager.get_loading_text()
+                } else {
+                    "Loading...".to_string()
+                };
+                widget::text(loading_text).into()
+            }
             ModelState::EmptyDirectory => self.view_empty_dir_model(),
         };
 
-        let tag_names = match &self.state {
-            ModelState::Sorting(model) => model.tag_names.clone(),
+        let tag_names = match self.state {
+            ModelState::Sorting => self.tag_names.clone(),
             _ => TagNames::new(),
         };
         let actions_content = actions::view_actions_tab(&self.selected_action_tag, &tag_names);
@@ -431,41 +505,49 @@ impl Model {
     fn view_empty_dir_model(&self) -> Element<'static, Message> {
         column![
             widget::text("No pictures in this directory, select another one"),
-            button("Select Folder").on_press(Message::UserPressedSelectFolder),
+            widget::button("Select Folder").on_press(Message::UserPressedSelectFolder),
         ]
         .into()
     }
 }
 
-impl Model {}
+impl Model {
+    fn update_sorting(&mut self, message: SortingMessage) -> Effect {
+        let config = self.config.clone();
+        sorting::update_sorting_model(self, message, &config)
+    }
 
-fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message> {
+    fn view_sorting(&self) -> iced::Element<'_, Message> {
+        sorting::view_sorting_model(self, &self.config, &self.task_manager)
+    }
+}
+
+fn effect_to_task(effect: Effect, model: &Model, _config: Config) -> Task<Message> {
     match effect {
         Effect::None => Task::none(),
-        Effect::LsDir => ls_dir_task(PICTURE_DIR.to_owned()),
-        Effect::PreloadImages(paths) => match &model.state {
-            ModelState::Sorting(sorting) => {
-                if let Some(dim) = &sorting.canvas_dimensions {
-                    preload_images_task(paths, dim.clone(), config)
-                } else {
-                    debug!("Deciding");
-                    Task::none()
-                }
-            }
-            _ => Task::none(),
-        },
-
+        Effect::LsDir => {
+            let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
+            let task_id = TaskId::new();
+            Task::perform(future, move |res| match res {
+                Ok(paths) => Message::ListDirCompleted(task_id, paths),
+                Err(_) => panic!("Could not list directory"),
+            })
+        }
+        Effect::PreloadImages(_paths) => {
+            // This case is now handled in update_with_task
+            Task::none()
+        }
         Effect::MoveImagesWithTag(tag) => {
             let (files_to_move, tag_name) = {
                 let mut files_to_move = Vec::new();
-                let tag_name = match &model.state {
-                    ModelState::Sorting(sorting) => {
-                        for info in &sorting.pathlist.paths {
+                let tag_name = match model.state {
+                    ModelState::Sorting => {
+                        for info in &model.pathlist.paths {
                             if info.metadata.tag == Some(tag) {
                                 files_to_move.push(info.path.clone());
                             }
                         }
-                        sorting.tag_names.get(&tag)
+                        model.tag_names.get(&tag)
                     }
                     _ => panic!("MoveImages effect should only be called in the sorting state"),
                 };
@@ -476,8 +558,15 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
                 Task::none()
             } else {
                 println!("mv {} \"{}\"", files_to_move.join(" "), tag_name);
-                mv_files_task(files_to_move, tag_name.to_string())
-                    .then(|()| ls_dir_task(PICTURE_DIR.to_owned()))
+                mv_files_task(files_to_move, tag_name.to_string()).then(|_| {
+                    // Create a new task for directory refresh after move
+                    let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
+                    let task_id = TaskId::new();
+                    Task::perform(future, move |res| match res {
+                        Ok(paths) => Message::ListDirCompleted(task_id, paths),
+                        Err(_) => panic!("Could not list directory after move"),
+                    })
+                })
             }
         }
         Effect::FocusElement(id) => widget::text_input::focus(id),
@@ -511,13 +600,6 @@ fn mv_files(files: Vec<String>, destination: String) {
     }
 }
 
-fn ls_dir_task(path: String) -> Task<Message> {
-    Task::perform(get_files_in_folder_async(path), |res| match res {
-        Ok(paths) => Message::ListDirCompleted(paths),
-        Err(_) => panic!("Could not list directory"),
-    })
-}
-
 async fn get_files_in_folder_async(folder_path: String) -> std::io::Result<Vec<String>> {
     match tokio::task::spawn_blocking(move || get_files_in_folder(folder_path.as_str())).await {
         Ok(res) => res,
@@ -547,23 +629,37 @@ fn get_files_in_folder(folder_path: &str) -> std::io::Result<Vec<String>> {
     Ok(file_names)
 }
 
-fn preload_images_task(paths: Vec<String>, dim: Dim, config: Config) -> Task<Message> {
+fn preload_images_task(
+    paths: Vec<String>,
+    dim: Dim,
+    config: Config,
+    task_manager: &mut TaskManager,
+) -> Task<Message> {
     let mut tasks = Vec::new();
     for path in paths {
         let config2 = config.clone();
         let dim2 = dim.clone();
-        let fut = tokio::task::spawn_blocking(move || preload_image(path, dim2, config2));
-        tasks.push(Task::perform(fut, |res| match res {
-            Ok((path4, image)) => Message::Sorting(SortingMessage::ImagePreloaded(path4, image)),
-            Err(_) => Message::Sorting(SortingMessage::ImagePreloadFailed(
-                "too hard to know".to_owned(),
-            )),
-        }))
+        let path_clone = path.clone();
+
+        // Create the future for preload operation
+        let future = tokio::task::spawn_blocking(move || preload_image(path_clone, dim2, config2));
+
+        // Start cancellable task using TaskManager
+        let (task_id, preload_task) =
+            task_manager.start_cancellable_task(TaskType::PreloadImage, future);
+
+        // Transform the task result to include task_id
+        let complete_task = preload_task.map(move |result| match result {
+            Ok((path4, image)) => Message::ImagePreloadedWithTask(task_id, path4, image),
+            Err(_) => Message::ImagePreloadFailedWithTask(task_id, "too hard to know".to_owned()),
+        });
+
+        tasks.push(complete_task);
     }
     Task::batch(tasks)
 }
 
-fn preload_image(path: String, dim: Dim, config: Config) -> (String, ImageData) {
+fn preload_image(path: String, dim: Dim, _config: Config) -> (String, ImageData) {
     let image = ImageReader::open(path.as_str())
         .unwrap()
         .decode()
@@ -579,10 +675,6 @@ fn preload_image(path: String, dim: Dim, config: Config) -> (String, ImageData) 
         height,
     };
     (path, image)
-}
-
-fn button(text: &str) -> widget::Button<'_, Message> {
-    widget::button(text).padding(10)
 }
 
 #[cfg(test)]
