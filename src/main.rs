@@ -19,6 +19,8 @@ use image_widget::PixelCanvasMessage;
 use settings::{SettingsMessage, SettingsModel};
 use sorting::{SortingMessage, SortingModel, Tag, TagNames};
 
+use crate::sorting::Dim;
+
 const PICTURE_DIR: &str = ".";
 const PRELOAD_IN_FLIGHT: usize = 8;
 #[allow(dead_code)]
@@ -441,7 +443,18 @@ fn effect_to_task(effect: Effect, model: &Model, config: Config) -> Task<Message
     match effect {
         Effect::None => Task::none(),
         Effect::LsDir => ls_dir_task(PICTURE_DIR.to_owned()),
-        Effect::PreloadImages(paths) => preload_images_task(paths, config),
+        Effect::PreloadImages(paths) => match &model.state {
+            ModelState::Sorting(sorting) => {
+                if let Some(dim) = &sorting.canvas_dimensions {
+                    preload_images_task(paths, dim.clone(), config)
+                } else {
+                    debug!("Deciding");
+                    Task::none()
+                }
+            }
+            _ => Task::none(),
+        },
+
         Effect::MoveImagesWithTag(tag) => {
             let (files_to_move, tag_name) = {
                 let mut files_to_move = Vec::new();
@@ -534,11 +547,12 @@ fn get_files_in_folder(folder_path: &str) -> std::io::Result<Vec<String>> {
     Ok(file_names)
 }
 
-fn preload_images_task(paths: Vec<String>, config: Config) -> Task<Message> {
+fn preload_images_task(paths: Vec<String>, dim: Dim, config: Config) -> Task<Message> {
     let mut tasks = Vec::new();
     for path in paths {
         let config2 = config.clone();
-        let fut = tokio::task::spawn_blocking(move || preload_image(path, config2));
+        let dim2 = dim.clone();
+        let fut = tokio::task::spawn_blocking(move || preload_image(path, dim2, config2));
         tasks.push(Task::perform(fut, |res| match res {
             Ok((path4, image)) => Message::Sorting(SortingMessage::ImagePreloaded(path4, image)),
             Err(_) => Message::Sorting(SortingMessage::ImagePreloadFailed(
@@ -549,16 +563,13 @@ fn preload_images_task(paths: Vec<String>, config: Config) -> Task<Message> {
     Task::batch(tasks)
 }
 
-fn preload_image(path: String, config: Config) -> (String, ImageData) {
+fn preload_image(path: String, dim: Dim, config: Config) -> (String, ImageData) {
     let image = ImageReader::open(path.as_str())
         .unwrap()
         .decode()
         .unwrap()
-        .resize(
-            config.scale_down_size.0,
-            config.scale_down_size.1,
-            image::imageops::FilterType::Triangle,
-        )
+        // TODO this is the resize call
+        .resize(dim.width, dim.height, image::imageops::FilterType::Triangle)
         .to_rgba8();
     let width = image.width();
     let height = image.height();

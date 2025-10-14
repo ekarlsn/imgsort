@@ -67,7 +67,7 @@ pub enum SortingViewStyle {
     BeforeAfter,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Dim {
     pub width: u32,
     pub height: u32,
@@ -293,8 +293,13 @@ impl SortingModel {
             }
             SortingMessage::CanvasResized(dim) => {
                 println!("Canvas resized to: {}x{}", dim.width, dim.height);
-                self.canvas_dimensions = Some(dim);
-                Effect::None
+                if (self.canvas_dimensions.as_ref() != Some(&dim)) {
+                    self.canvas_dimensions = Some(dim);
+                    // Start the preloading now
+                    Effect::LsDir
+                } else {
+                    Effect::None
+                }
             }
         }
     }

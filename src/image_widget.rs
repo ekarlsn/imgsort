@@ -42,6 +42,7 @@ impl canvas::Program<Message> for PixelCanvas {
         let image_data = if let Some(image_data) = &self.image_data {
             image_data
         } else {
+            // TODO show loading image here
             return vec![frame.into_geometry()];
         };
 
