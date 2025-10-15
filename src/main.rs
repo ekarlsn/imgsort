@@ -1,6 +1,5 @@
 use clap::Parser;
 
-use futures::FutureExt;
 use iced::event::{self, Event};
 use iced::widget::{self, column};
 use iced::{Element, Subscription, Task};
@@ -12,11 +11,13 @@ rust_i18n::i18n!("locales");
 
 mod actions;
 mod image_widget;
+mod pathlist;
 mod settings;
 mod sorting;
 mod task_manager;
 
 use image_widget::PixelCanvasMessage;
+use pathlist::PathList;
 
 use settings::{SettingsMessage, SettingsModel};
 use sorting::{SortingMessage, Tag, TagNames};
@@ -144,89 +145,10 @@ enum Message {
     UserPressedActionBack,
     ListDirCompleted(TaskId, Vec<String>),
     ImagePreloaded(TaskId, String, ImageData),
-    ImagePreloadFailedWithTask(TaskId, String),
     KeyboardEventOccurred(iced::keyboard::Event),
     Settings(SettingsMessage),
     Sorting(SortingMessage),
     PixelCanvas(PixelCanvasMessage),
-}
-
-#[derive(Debug)]
-struct PathList {
-    paths: Vec<ImageInfo>,
-    index: usize,
-    preload_back_num: usize,
-    preload_front_num: usize,
-}
-
-impl PathList {
-    fn new(paths: Vec<String>, preload_back_num: usize, preload_front_num: usize) -> Self {
-        let paths = paths
-            .iter()
-            .map(|path| ImageInfo {
-                path: path.clone(),
-                data: PreloadImage::Loading(path.clone()),
-                metadata: Metadata { tag: None },
-            })
-            .collect();
-        Self {
-            paths,
-            index: 0,
-            preload_back_num,
-            preload_front_num,
-        }
-    }
-
-    // Preload order?
-    // cache-size = 100, how many picture are kept in the list, when you scroll past preload limit
-    // back = 10, how many you start preloading backwards
-    // front = 30, how many you start preloading forwards
-    // in_flight = 8 (Or number of cores?), how many you preload at the same time
-    fn get_initial_preload_images(&self) -> Vec<String> {
-        let mut paths = Vec::new();
-        let from = self
-            .index
-            .saturating_sub(std::cmp::min(self.preload_back_num, PRELOAD_IN_FLIGHT / 2));
-        let to = *[
-            self.index + self.preload_front_num + 1,
-            self.paths.len(),
-            from + PRELOAD_IN_FLIGHT,
-        ]
-        .iter()
-        .min()
-        .expect("The iter is not empty");
-
-        for i in from..to {
-            paths.push(self.paths[i].path.clone());
-        }
-        paths
-    }
-
-    fn tag_of(&self, path: &str) -> Option<Tag> {
-        self.paths
-            .iter()
-            .find(|info| info.path == path)
-            .and_then(|info| info.metadata.tag)
-    }
-    fn prev(&self) -> Option<&ImageInfo> {
-        if self.index == 0 {
-            None
-        } else {
-            Some(&self.paths[self.index - 1])
-        }
-    }
-
-    fn current(&self) -> &ImageInfo {
-        &self.paths[self.index]
-    }
-
-    fn next(&self) -> Option<&ImageInfo> {
-        self.paths.get(self.index + 1)
-    }
-
-    fn current_mut(&mut self) -> &mut ImageInfo {
-        &mut self.paths[self.index]
-    }
 }
 
 #[derive(Debug)]
@@ -403,16 +325,6 @@ impl Model {
                 match self.state {
                     ModelState::Sorting => {
                         self.update_sorting(SortingMessage::ImagePreloaded(task_id, path, image))
-                    }
-                    _ => Effect::None,
-                }
-            }
-            Message::ImagePreloadFailedWithTask(task_id, path) => {
-                self.task_manager.report_completed_task(task_id);
-                debug!("Image preload failed for task {:?}", task_id);
-                match self.state {
-                    ModelState::Sorting => {
-                        self.update_sorting(SortingMessage::ImagePreloadFailed(task_id, path))
                     }
                     _ => Effect::None,
                 }

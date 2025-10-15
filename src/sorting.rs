@@ -1,11 +1,11 @@
 use iced::widget::{self, button, canvas, center, column, row, stack};
 use iced::{Color, Element, Length};
 use iced_aw::{drop_down, DropDown};
-use itertools::Itertools;
 use rust_i18n::t;
 use std::collections::HashMap;
 
 use crate::image_widget::PixelCanvas;
+use crate::pathlist::schedule_next_preload_image_after_one_finished;
 use crate::{Config, Effect, ImageData, ImageInfo, Message, PathList, PreloadImage};
 
 // Constants
@@ -30,7 +30,6 @@ pub enum SortingMessage {
     UserEditTagName(String),
     UserPressedTagMenu(Option<Tag>),
     ImagePreloaded(crate::task_manager::TaskId, String, ImageData),
-    ImagePreloadFailed(crate::task_manager::TaskId, String),
     KeyboardEvent(iced::keyboard::Event),
     CanvasResized(Dim),
 }
@@ -179,32 +178,6 @@ fn user_pressed_next_image(model: &mut crate::Model) -> Effect {
         }
     }
 
-    Effect::None
-}
-
-fn schedule_next_preload_image_after_one_finished(
-    model: &crate::Model,
-    _config: &Config,
-) -> Effect {
-    let pathlist = &model.pathlist;
-    let curr = pathlist.index;
-
-    let forward = pathlist.paths.iter().skip(curr);
-    let rev = pathlist
-        .paths
-        .iter()
-        .rev()
-        .skip(pathlist.paths.len() - curr);
-
-    for e in forward.interleave(rev) {
-        let loading = match e.data {
-            PreloadImage::Loading(_) => true,
-            _ => false,
-        };
-        if loading {
-            return Effect::PreloadImages(vec![e.path.clone()], model.canvas_dimensions.unwrap());
-        }
-    }
     Effect::None
 }
 
@@ -470,12 +443,11 @@ fn tag_dropdown_button(text: &str, message: SortingMessage) -> Element<Message> 
 pub fn update_sorting_model(
     model: &mut crate::Model,
     message: SortingMessage,
-    config: &crate::Config,
+    _config: &crate::Config,
 ) -> crate::Effect {
     match message {
         SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
         SortingMessage::UserPressedNextImage => user_pressed_next_image(model),
-        SortingMessage::ImagePreloadFailed(_task_id, _path) => crate::Effect::None,
         SortingMessage::ImagePreloaded(_task_id, path, image) => {
             model
                 .pathlist
@@ -487,7 +459,11 @@ pub fn update_sorting_model(
                     info
                 });
 
-            schedule_next_preload_image_after_one_finished(&model, config)
+            if let Some(path) = schedule_next_preload_image_after_one_finished(&model.pathlist) {
+                crate::Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap())
+            } else {
+                crate::Effect::None
+            }
         }
         SortingMessage::KeyboardEvent(_) if is_typing_action(model) => crate::Effect::None,
         SortingMessage::KeyboardEvent(event) => match event {
@@ -647,10 +623,6 @@ fn view_image_with_thumbs<'a>(
         width: config.scale_down_size.0,
         height: config.scale_down_size.1,
     };
-    let thumbs_dim = Dim {
-        width: 100,
-        height: 100,
-    };
     match sorting_view_style {
         SortingViewStyle::BeforeAfter => view_thumbnails_before_after(model, img_dim),
         SortingViewStyle::NoThumbnails => view_with_no_thumbnails(model, img_dim),
@@ -743,60 +715,6 @@ fn view_with_thumbnails_on_top(model: &crate::Model, img_dim: Dim) -> Element<Me
     column![widget::Row::from_vec(thumbs), image].into()
 }
 
-fn view_image_with_thumbs_flat<'a>(
-    model: &'a crate::Model,
-    config: &'a crate::Config,
-) -> Element<'a, crate::Message> {
-    let img_dim = Dim {
-        width: config.scale_down_size.0,
-        height: config.scale_down_size.1,
-    };
-
-    // Prev image thumbnail
-    let prev = if let Some(img_info) = model.pathlist.prev() {
-        view_image(img_info, &model.tag_names, img_dim, false, false)
-    } else {
-        placeholder_text("No previous image", &img_dim).into()
-    };
-
-    // Current main image
-    let image = {
-        let current = model.pathlist.current();
-        let main_img_dim = model.canvas_dimensions.unwrap_or(img_dim);
-        view_image(current, &model.tag_names, main_img_dim, true, true)
-    };
-
-    // Next image thumbnail
-    let next = if let Some(img_info) = model.pathlist.next() {
-        view_image(img_info, &model.tag_names, img_dim, false, false)
-    } else {
-        placeholder_text("No next image", &img_dim).into()
-    };
-
-    // Build the layout
-    let image_row = row![
-        widget::container(prev).width(Length::Fill),
-        widget::container(image).width(Length::Fill),
-        widget::container(next).width(Length::Fill),
-    ]
-    .spacing(20);
-
-    let image_container = widget::container(image_row)
-        .width(Length::Fill)
-        .height(Length::Fill);
-
-    let current_image_data = match &model.pathlist.current().data {
-        crate::PreloadImage::Loaded(data) => Some(data),
-        _ => None,
-    };
-    let pixel_canvas = crate::image_widget::PixelCanvas::new(current_image_data, true);
-    let canvas_widget = canvas(pixel_canvas)
-        .width(Length::Fill)
-        .height(Length::Fill);
-
-    stack![image_container, canvas_widget].into()
-}
-
 enum SortingViewStyle {
     NoThumbnails,
     #[allow(unused)]
@@ -804,3 +722,6 @@ enum SortingViewStyle {
     #[allow(unused)]
     BeforeAfter,
 }
+
+#[cfg(test)]
+mod tests {}
