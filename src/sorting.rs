@@ -489,7 +489,7 @@ pub fn update_sorting_model(
 
             schedule_next_preload_image_after_one_finished(&model, config)
         }
-        SortingMessage::KeyboardEvent(_) if is_typing_action_flat(model) => crate::Effect::None,
+        SortingMessage::KeyboardEvent(_) if is_typing_action(model) => crate::Effect::None,
         SortingMessage::KeyboardEvent(event) => match event {
             iced::keyboard::Event::KeyPressed { key, modifiers, .. } => match key.as_ref() {
                 iced::keyboard::Key::Character("h")
@@ -578,7 +578,7 @@ pub fn view_sorting_model<'a>(
         return widget::text("No images found").into();
     }
 
-    let main_image_view = view_image_with_thumbs_flat(model, config);
+    let main_image_view = view_image_with_thumbs(SortingViewStyle::NoThumbnails, model, config);
 
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
 
@@ -634,8 +634,113 @@ pub fn view_sorting_model<'a>(
     stack![content].push_maybe(popup).into()
 }
 
-fn is_typing_action_flat(model: &crate::Model) -> bool {
+fn is_typing_action(model: &crate::Model) -> bool {
     model.editing_tag_name.is_some()
+}
+
+fn view_image_with_thumbs<'a>(
+    sorting_view_style: SortingViewStyle,
+    model: &'a crate::Model,
+    config: &'a Config,
+) -> Element<'a, Message> {
+    let img_dim = Dim {
+        width: config.scale_down_size.0,
+        height: config.scale_down_size.1,
+    };
+    let thumbs_dim = Dim {
+        width: 100,
+        height: 100,
+    };
+    match sorting_view_style {
+        SortingViewStyle::BeforeAfter => view_thumbnails_before_after(model, img_dim),
+        SortingViewStyle::NoThumbnails => view_with_no_thumbnails(model, img_dim),
+        SortingViewStyle::Thumbnails => view_with_thumbnails_on_top(model, img_dim),
+    }
+}
+
+fn view_thumbnails_before_after(model: &crate::Model, img_dim: Dim) -> Element<Message> {
+    let thumbs_dim = Dim {
+        width: 100,
+        height: 100,
+    };
+
+    let prev_image = model
+        .pathlist
+        .prev()
+        .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false, false))
+        .unwrap_or(placeholder_text("No previous image", &thumbs_dim).into());
+
+    let image = view_image(
+        model.pathlist.current(),
+        &model.tag_names,
+        img_dim,
+        false,
+        true,
+    );
+
+    let next_image = model
+        .pathlist
+        .next()
+        .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false, false))
+        .unwrap_or(placeholder_text("No next image", &thumbs_dim).into());
+
+    row![prev_image, image, next_image].into()
+}
+
+fn view_with_no_thumbnails(model: &crate::Model, img_dim: Dim) -> Element<Message> {
+    let image = view_image(
+        model.pathlist.current(),
+        &model.tag_names,
+        img_dim,
+        false,
+        true,
+    );
+
+    image.into()
+}
+
+fn view_with_thumbnails_on_top(model: &crate::Model, img_dim: Dim) -> Element<Message> {
+    let thumbs_dim = Dim {
+        width: 100,
+        height: 100,
+    };
+
+    let image = view_image(
+        model.pathlist.current(),
+        &model.tag_names,
+        img_dim,
+        false,
+        true,
+    );
+
+    let num_thumbs = 3;
+    let mut thumbs = Vec::new();
+    for i in
+        (model.pathlist.index as isize) - num_thumbs..=(model.pathlist.index as isize) + num_thumbs
+    {
+        let img = if i >= 0 && i < model.pathlist.paths.len() as isize {
+            Some(&model.pathlist.paths[i as usize])
+        } else {
+            None
+        };
+
+        let highlight = i == model.pathlist.index as isize;
+
+        let thumb = img
+            .map(|image| {
+                view_image(
+                    image,
+                    &model.tag_names,
+                    thumbs_dim.clone(),
+                    highlight,
+                    false,
+                )
+            })
+            .unwrap_or(placeholder_text("No thumbnail", &thumbs_dim).into());
+        thumbs.push(thumb);
+    }
+
+    column![widget::Row::from_vec(thumbs), image].into()
 }
 
 fn view_image_with_thumbs_flat<'a>(
@@ -690,4 +795,12 @@ fn view_image_with_thumbs_flat<'a>(
         .height(Length::Fill);
 
     stack![image_container, canvas_widget].into()
+}
+
+enum SortingViewStyle {
+    NoThumbnails,
+    #[allow(unused)]
+    Thumbnails,
+    #[allow(unused)]
+    BeforeAfter,
 }
