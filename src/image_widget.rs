@@ -12,13 +12,13 @@ pub enum PixelCanvasMessage {
     CanvasSized(Dim),
 }
 
-pub struct PixelCanvas {
-    image_data: Option<ImageData>,
+pub struct PixelCanvas<'a> {
+    image_data: Option<&'a ImageData>,
     send_resize_messages: bool,
 }
 
-impl PixelCanvas {
-    pub fn new(image_data: Option<ImageData>, send_resize_messages: bool) -> Self {
+impl<'a> PixelCanvas<'a> {
+    pub fn new(image_data: Option<&'a ImageData>, send_resize_messages: bool) -> Self {
         Self {
             image_data,
             send_resize_messages,
@@ -26,7 +26,7 @@ impl PixelCanvas {
     }
 }
 
-impl canvas::Program<Message> for PixelCanvas {
+impl<'a> canvas::Program<Message> for PixelCanvas<'a> {
     type State = ();
 
     fn draw(

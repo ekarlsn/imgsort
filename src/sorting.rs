@@ -239,7 +239,7 @@ fn view_loaded_image(
     highlight: bool,
     send_resize_messages: bool,
 ) -> Element<Message> {
-    let pixel_canvas = PixelCanvas::new(image.map(|image| image.clone()), send_resize_messages);
+    let pixel_canvas = PixelCanvas::new(image, send_resize_messages);
     let (w, h) = if !send_resize_messages {
         (
             Length::Fixed(dim.width as f32),
@@ -670,7 +670,7 @@ fn view_image_with_thumbs_flat<'a>(
         crate::PreloadImage::Loaded(data) => Some(data),
         _ => None,
     };
-    let pixel_canvas = crate::image_widget::PixelCanvas::new(current_image_data.cloned(), true);
+    let pixel_canvas = crate::image_widget::PixelCanvas::new(current_image_data, true);
     let canvas_widget = canvas(pixel_canvas)
         .width(Length::Fill)
         .height(Length::Fill);
