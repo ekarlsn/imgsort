@@ -72,7 +72,11 @@ impl TaskManager {
         (task_id, abortable_task)
     }
 
-    pub fn complete_task(&mut self, id: TaskId) {
+    pub fn cancel_all(&mut self) {
+        self.active_tasks.clear();
+    }
+
+    pub fn report_completed_task(&mut self, id: TaskId) {
         if let Some(task_info) = self.active_tasks.remove(&id) {
             debug!("Completed task {:?}: {:?}", id, task_info.task_type);
         }

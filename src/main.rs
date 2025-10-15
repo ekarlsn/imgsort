@@ -269,8 +269,9 @@ impl Model {
     }
 
     fn new_with_task() -> (Self, Task<Message>) {
-        let (new_self, effect) = Self::new();
-        let task = effect_to_task(effect, &new_self, new_self.config.clone());
+        let (mut new_self, effect) = Self::new();
+        let config_clone = new_self.config.clone();
+        let task = effect_to_task(effect, &mut new_self, config_clone);
         (new_self, task)
     }
 
@@ -384,7 +385,10 @@ impl Model {
                 }
                 _ => Task::none(),
             },
-            _ => effect_to_task(effect, &self, self.config.clone()),
+            _ => {
+                let config_clone = self.config.clone();
+                effect_to_task(effect, self, config_clone)
+            }
         }
     }
 
@@ -406,7 +410,7 @@ impl Model {
             }
             Message::UserPressedSelectFolder => Effect::None,
             Message::ListDirCompleted(task_id, paths) => {
-                self.task_manager.complete_task(task_id);
+                self.task_manager.report_completed_task(task_id);
                 debug!("Directory listing completed for task {:?}", task_id);
                 if paths.is_empty() {
                     self.state = ModelState::EmptyDirectory;
@@ -416,7 +420,7 @@ impl Model {
                 }
             }
             Message::ImagePreloadedWithTask(task_id, path, image) => {
-                self.task_manager.complete_task(task_id);
+                self.task_manager.report_completed_task(task_id);
                 debug!("Image preload completed for task {:?}", task_id);
                 match self.state {
                     ModelState::Sorting => {
@@ -426,7 +430,7 @@ impl Model {
                 }
             }
             Message::ImagePreloadFailedWithTask(task_id, path) => {
-                self.task_manager.complete_task(task_id);
+                self.task_manager.report_completed_task(task_id);
                 debug!("Image preload failed for task {:?}", task_id);
                 match self.state {
                     ModelState::Sorting => {
@@ -522,10 +526,11 @@ impl Model {
     }
 }
 
-fn effect_to_task(effect: Effect, model: &Model, _config: Config) -> Task<Message> {
+fn effect_to_task(effect: Effect, model: &mut Model, _config: Config) -> Task<Message> {
     match effect {
         Effect::None => Task::none(),
         Effect::LsDir => {
+            model.task_manager.cancel_all();
             let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
             let task_id = TaskId::new();
             Task::perform(future, move |res| match res {
