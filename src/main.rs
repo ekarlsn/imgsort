@@ -1,5 +1,6 @@
 use clap::Parser;
 
+use futures::FutureExt;
 use iced::event::{self, Event};
 use iced::widget::{self, column};
 use iced::{Element, Subscription, Task};
@@ -22,6 +23,7 @@ use sorting::{SortingMessage, Tag, TagNames};
 use task_manager::{TaskId, TaskManager, TaskType};
 
 use crate::sorting::Dim;
+use crate::task_manager::TaskCompleteResult;
 
 const PICTURE_DIR: &str = ".";
 const PRELOAD_IN_FLIGHT: usize = 8;
@@ -141,7 +143,7 @@ enum Message {
     UserPressedActionTag(Tag),
     UserPressedActionBack,
     ListDirCompleted(TaskId, Vec<String>),
-    ImagePreloadedWithTask(TaskId, String, ImageData),
+    ImagePreloaded(TaskId, String, ImageData),
     ImagePreloadFailedWithTask(TaskId, String),
     KeyboardEventOccurred(iced::keyboard::Event),
     Settings(SettingsMessage),
@@ -238,7 +240,7 @@ enum PreloadImage {
 enum Effect {
     None,
     LsDir,
-    PreloadImages(Vec<String>),
+    PreloadImages(Vec<String>, Dim),
     MoveImagesWithTag(Tag),
     FocusElement(widget::text_input::Id),
 }
@@ -346,7 +348,11 @@ impl Model {
         };
         let preload_images = self.pathlist.get_initial_preload_images();
 
-        Effect::PreloadImages(preload_images)
+        if let Some(dimensions) = self.canvas_dimensions {
+            Effect::PreloadImages(preload_images, dimensions)
+        } else {
+            Effect::None
+        }
     }
 
     fn title(&self) -> String {
@@ -356,40 +362,7 @@ impl Model {
     fn update_with_task(&mut self, message: Message) -> Task<Message> {
         let effect = self.update(message);
 
-        // Handle task tracking for new effects
-        match effect {
-            Effect::LsDir => {
-                let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
-                let (task_id, task) = self
-                    .task_manager
-                    .start_cancellable_task(TaskType::LsDir, future);
-
-                task.map(move |res| match res {
-                    Ok(paths) => Message::ListDirCompleted(task_id, paths),
-                    Err(_) => panic!("Could not list directory"),
-                })
-            }
-            Effect::PreloadImages(paths) => match self.state {
-                ModelState::Sorting => {
-                    if let Some(dim) = &self.canvas_dimensions {
-                        preload_images_task(
-                            paths,
-                            dim.clone(),
-                            self.config.clone(),
-                            &mut self.task_manager,
-                        )
-                    } else {
-                        debug!("No canvas dimensions available for preloading");
-                        Task::none()
-                    }
-                }
-                _ => Task::none(),
-            },
-            _ => {
-                let config_clone = self.config.clone();
-                effect_to_task(effect, self, config_clone)
-            }
-        }
+        effect_to_task(effect, self, self.config.clone())
     }
 
     fn update(&mut self, message: Message) -> Effect {
@@ -410,16 +383,27 @@ impl Model {
             }
             Message::UserPressedSelectFolder => Effect::None,
             Message::ListDirCompleted(task_id, paths) => {
-                self.task_manager.report_completed_task(task_id);
+                if self.task_manager.report_completed_task(task_id)
+                    == TaskCompleteResult::TaskWasCancelled
+                {
+                    return Effect::None;
+                };
+                self.task_manager.cancel_all();
                 debug!("Directory listing completed for task {:?}", task_id);
                 if paths.is_empty() {
                     self.state = ModelState::EmptyDirectory;
                     Effect::None
                 } else {
-                    self.go_to_sorting_model(paths)
+                    // TODO temporary reduce the amount of images for debug
+                    let p2 = paths
+                        .iter()
+                        .take(4)
+                        .map(|path| path.clone())
+                        .collect::<Vec<_>>();
+                    self.go_to_sorting_model(p2)
                 }
             }
-            Message::ImagePreloadedWithTask(task_id, path, image) => {
+            Message::ImagePreloaded(task_id, path, image) => {
                 self.task_manager.report_completed_task(task_id);
                 debug!("Image preload completed for task {:?}", task_id);
                 match self.state {
@@ -532,15 +516,16 @@ fn effect_to_task(effect: Effect, model: &mut Model, _config: Config) -> Task<Me
         Effect::LsDir => {
             model.task_manager.cancel_all();
             let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
-            let task_id = TaskId::new();
-            Task::perform(future, move |res| match res {
+            let (task_id, task) = model
+                .task_manager
+                .start_cancellable_task(TaskType::LsDir, future);
+            task.map(move |res| match res {
                 Ok(paths) => Message::ListDirCompleted(task_id, paths),
                 Err(_) => panic!("Could not list directory"),
             })
         }
-        Effect::PreloadImages(_paths) => {
-            // This case is now handled in update_with_task
-            Task::none()
+        Effect::PreloadImages(paths, dim) => {
+            preload_images_task(paths, dim, model.config.clone(), &mut model.task_manager)
         }
         Effect::MoveImagesWithTag(tag) => {
             let (files_to_move, tag_name) = {
@@ -655,8 +640,8 @@ fn preload_images_task(
 
         // Transform the task result to include task_id
         let complete_task = preload_task.map(move |result| match result {
-            Ok((path4, image)) => Message::ImagePreloadedWithTask(task_id, path4, image),
-            Err(_) => Message::ImagePreloadFailedWithTask(task_id, "too hard to know".to_owned()),
+            Ok((path4, image)) => Message::ImagePreloaded(task_id, path4, image),
+            Err(_) => panic!("Image preload failed"),
         });
 
         tasks.push(complete_task);

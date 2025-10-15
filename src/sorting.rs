@@ -144,7 +144,10 @@ fn user_pressed_previous_image(model: &mut crate::Model) -> Effect {
         let info = &mut model.pathlist.paths[new_preload_index];
         if matches!(info.data, crate::PreloadImage::OutOfRange) {
             info.data = crate::PreloadImage::Loading(info.path.clone());
-            return Effect::PreloadImages(vec![info.path.clone()]);
+            return Effect::PreloadImages(
+                vec![info.path.clone()],
+                model.canvas_dimensions.unwrap(),
+            );
         }
     }
 
@@ -169,14 +172,21 @@ fn user_pressed_next_image(model: &mut crate::Model) -> Effect {
         let info = &mut model.pathlist.paths[new_preload_index];
         if matches!(info.data, crate::PreloadImage::OutOfRange) {
             info.data = crate::PreloadImage::Loading(info.path.clone());
-            return Effect::PreloadImages(vec![info.path.clone()]);
+            return Effect::PreloadImages(
+                vec![info.path.clone()],
+                model.canvas_dimensions.unwrap(),
+            );
         }
     }
 
     Effect::None
 }
 
-fn schedule_next_preload_image_after_one_finished(pathlist: &PathList, _config: &Config) -> Effect {
+fn schedule_next_preload_image_after_one_finished(
+    model: &crate::Model,
+    _config: &Config,
+) -> Effect {
+    let pathlist = &model.pathlist;
     let curr = pathlist.index;
 
     let forward = pathlist.paths.iter().skip(curr);
@@ -187,8 +197,12 @@ fn schedule_next_preload_image_after_one_finished(pathlist: &PathList, _config: 
         .skip(pathlist.paths.len() - curr);
 
     for e in forward.interleave(rev) {
-        if matches!(e.data, PreloadImage::OutOfRange) {
-            return Effect::PreloadImages(vec![e.path.clone()]);
+        let loading = match e.data {
+            PreloadImage::Loading(_) => true,
+            _ => false,
+        };
+        if loading {
+            return Effect::PreloadImages(vec![e.path.clone()], model.canvas_dimensions.unwrap());
         }
     }
     Effect::None
@@ -473,7 +487,7 @@ pub fn update_sorting_model(
                     info
                 });
 
-            schedule_next_preload_image_after_one_finished(&model.pathlist, config)
+            schedule_next_preload_image_after_one_finished(&model, config)
         }
         SortingMessage::KeyboardEvent(_) if is_typing_action_flat(model) => crate::Effect::None,
         SortingMessage::KeyboardEvent(event) => match event {

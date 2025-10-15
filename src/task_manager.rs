@@ -76,9 +76,12 @@ impl TaskManager {
         self.active_tasks.clear();
     }
 
-    pub fn report_completed_task(&mut self, id: TaskId) {
+    pub fn report_completed_task(&mut self, id: TaskId) -> TaskCompleteResult {
         if let Some(task_info) = self.active_tasks.remove(&id) {
             debug!("Completed task {:?}: {:?}", id, task_info.task_type);
+            TaskCompleteResult::Success
+        } else {
+            TaskCompleteResult::TaskWasCancelled
         }
     }
 
@@ -111,4 +114,10 @@ impl TaskManager {
     pub fn is_loading(&self) -> bool {
         !self.active_tasks.is_empty()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskCompleteResult {
+    Success,
+    TaskWasCancelled,
 }
