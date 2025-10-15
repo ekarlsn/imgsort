@@ -394,13 +394,7 @@ impl Model {
                     self.state = ModelState::EmptyDirectory;
                     Effect::None
                 } else {
-                    // TODO temporary reduce the amount of images for debug
-                    let p2 = paths
-                        .iter()
-                        .take(4)
-                        .map(|path| path.clone())
-                        .collect::<Vec<_>>();
-                    self.go_to_sorting_model(p2)
+                    self.go_to_sorting_model(paths)
                 }
             }
             Message::ImagePreloaded(task_id, path, image) => {
