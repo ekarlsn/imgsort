@@ -141,7 +141,7 @@ fn user_pressed_previous_image(model: &mut crate::Model) -> Effect {
         let new_preload_index =
             (model.pathlist.index as isize - model.pathlist.preload_back_num as isize) as usize;
         let info = &mut model.pathlist.paths[new_preload_index];
-        if matches!(info.data, crate::PreloadImage::OutOfRange) {
+        if matches!(info.data, crate::PreloadImage::NotLoading) {
             info.data = crate::PreloadImage::Loading(info.path.clone());
             return Effect::PreloadImages(
                 vec![info.path.clone()],
@@ -169,7 +169,7 @@ fn user_pressed_next_image(model: &mut crate::Model) -> Effect {
         let new_preload_index =
             (model.pathlist.index as isize + model.pathlist.preload_front_num as isize) as usize;
         let info = &mut model.pathlist.paths[new_preload_index];
-        if matches!(info.data, crate::PreloadImage::OutOfRange) {
+        if matches!(info.data, crate::PreloadImage::NotLoading) {
             info.data = crate::PreloadImage::Loading(info.path.clone());
             return Effect::PreloadImages(
                 vec![info.path.clone()],
@@ -215,7 +215,7 @@ fn view_image<'a>(
         PreloadImage::Loading(_path) => {
             view_loaded_image(None, name_and_color, dim, highlight, is_main_image)
         }
-        PreloadImage::OutOfRange => placeholder_text("Out of range", &dim).into(),
+        PreloadImage::NotLoading => placeholder_text("Out of range", &dim).into(),
     }
 }
 
@@ -722,6 +722,3 @@ enum SortingViewStyle {
     #[allow(unused)]
     BeforeAfter,
 }
-
-#[cfg(test)]
-mod tests {}

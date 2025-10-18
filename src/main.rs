@@ -155,7 +155,7 @@ enum Message {
 enum PreloadImage {
     Loading(String),
     Loaded(ImageData),
-    OutOfRange,
+    NotLoading,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -238,7 +238,7 @@ impl Model {
                     .iter()
                     .map(|path| ImageInfo {
                         path: path.clone(),
-                        data: PreloadImage::OutOfRange,
+                        data: PreloadImage::NotLoading,
                         metadata: Metadata {
                             tag: self.pathlist.tag_of(path),
                         },

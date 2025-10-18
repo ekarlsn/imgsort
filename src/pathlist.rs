@@ -32,7 +32,7 @@ impl PathList {
     // back = 10, how many you start preloading backwards
     // front = 30, how many you start preloading forwards
     // in_flight = 8 (Or number of cores?), how many you preload at the same time
-    pub fn get_initial_preload_images(&self) -> Vec<String> {
+    pub fn get_initial_preload_images(&mut self) -> Vec<String> {
         let mut paths = Vec::new();
         let from = self
             .index
@@ -47,7 +47,9 @@ impl PathList {
         .expect("The iter is not empty");
 
         for i in from..to {
-            paths.push(self.paths[i].path.clone());
+            let p = self.paths[i].path.clone();
+            self.paths[i].data = PreloadImage::Loading(p.clone());
+            paths.push(p);
         }
         paths
     }
@@ -100,4 +102,145 @@ pub fn schedule_next_preload_image_after_one_finished(pathlist: &PathList) -> Op
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sorting::Tag;
+
+    fn create_test_pathlist(paths: Vec<&str>, back: usize, front: usize) -> PathList {
+        PathList::new(
+            paths.into_iter().map(|s| s.to_string()).collect(),
+            back,
+            front,
+        )
+    }
+
+    #[test]
+    fn test_current_prev_next() {
+        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 1, 2);
+
+        // At index 0
+        assert_eq!(pathlist.current().path, "img1.jpg");
+        assert!(pathlist.prev().is_none());
+        assert_eq!(pathlist.next().unwrap().path, "img2.jpg");
+
+        // Move to index 1
+        pathlist.index = 1;
+        assert_eq!(pathlist.current().path, "img2.jpg");
+        assert_eq!(pathlist.prev().unwrap().path, "img1.jpg");
+        assert_eq!(pathlist.next().unwrap().path, "img3.jpg");
+
+        // Move to last index
+        pathlist.index = 2;
+        assert_eq!(pathlist.current().path, "img3.jpg");
+        assert_eq!(pathlist.prev().unwrap().path, "img2.jpg");
+        assert!(pathlist.next().is_none());
+    }
+
+    #[test]
+    fn test_get_initial_preload_images_small_list() {
+        let pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 2, 5);
+        let preload = pathlist.get_initial_preload_images();
+
+        // With small list, should preload all images
+        assert_eq!(preload.len(), 3);
+        assert_eq!(preload, vec!["img1.jpg", "img2.jpg", "img3.jpg"]);
+    }
+
+    #[test]
+    fn test_get_list_preloads_finish() {
+        let paths: Vec<String> = (0..80).map(|i| format!("img{}.jpg", i)).collect();
+        let pathlist = PathList::new(paths, 3, 7);
+        let preload = pathlist.get_initial_preload_images();
+
+        // Should be limited by PRELOAD_IN_FLIGHT (8)
+        assert_eq!(preload.len(), 8);
+        assert_eq!(preload[0], "img0.jpg");
+        assert_eq!(preload[7], "img7.jpg");
+
+        let next_preload = schedule_next_preload_image_after_one_finished(&pathlist);
+        assert_eq!(next_preload.unwrap(), "img8.jpg");
+    }
+
+    #[test]
+    fn test_get_initial_preload_images_large_list() {
+        let paths: Vec<String> = (0..20).map(|i| format!("img{}.jpg", i)).collect();
+        let pathlist = PathList::new(paths, 3, 7);
+        let preload = pathlist.get_initial_preload_images();
+
+        // Should be limited by PRELOAD_IN_FLIGHT (8)
+        assert_eq!(preload.len(), 8);
+        assert_eq!(preload[0], "img0.jpg");
+        assert_eq!(preload[7], "img7.jpg");
+    }
+
+    #[test]
+    fn test_get_initial_preload_images_middle_index() {
+        let paths: Vec<String> = (0..20).map(|i| format!("img{}.jpg", i)).collect();
+        let mut pathlist = PathList::new(paths, 2, 5);
+        pathlist.index = 10;
+
+        let preload = pathlist.get_initial_preload_images();
+
+        // Should include some behind (limited by PRELOAD_IN_FLIGHT/2 = 4) and ahead
+        assert_eq!(preload.len(), 8);
+        // From index 8 to 15 (8 images total)
+        assert_eq!(preload[0], "img8.jpg");
+        assert_eq!(preload[7], "img15.jpg");
+    }
+
+    #[test]
+    fn test_tag_of() {
+        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 1, 2);
+
+        // Initially no tags
+        assert_eq!(pathlist.tag_of("img1.jpg"), None);
+        assert_eq!(pathlist.tag_of("img2.jpg"), None);
+        assert_eq!(pathlist.tag_of("nonexistent.jpg"), None);
+
+        // Set a tag
+        pathlist.paths[1].metadata.tag = Some(Tag::Tag2);
+        assert_eq!(pathlist.tag_of("img2.jpg"), Some(Tag::Tag2));
+        assert_eq!(pathlist.tag_of("img1.jpg"), None);
+    }
+
+    #[test]
+    fn test_schedule_next_preload_image_after_one_finished() {
+        let mut pathlist =
+            create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg", "img4.jpg"], 1, 2);
+        pathlist.index = 1; // Start at img2.jpg
+
+        // All are Loading initially, should return img2.jpg (current)
+        let next = schedule_next_preload_image_after_one_finished(&pathlist);
+        assert_eq!(next, Some("img2.jpg".to_string()));
+
+        // Mark current as loaded
+        pathlist.paths[1].data = PreloadImage::NotLoading;
+
+        // Should return next in interleaved order (img1.jpg is next in interleave: forward[img3,img4], rev[img1])
+        let next = schedule_next_preload_image_after_one_finished(&pathlist);
+        assert_eq!(next, Some("img1.jpg".to_string()));
+
+        // Mark img1 as loaded too
+        pathlist.paths[0].data = PreloadImage::NotLoading;
+
+        // Should return img3.jpg (next forward in interleaved order)
+        let next = schedule_next_preload_image_after_one_finished(&pathlist);
+        assert_eq!(next, Some("img3.jpg".to_string()));
+    }
+
+    #[test]
+    fn test_schedule_next_preload_no_loading_images() {
+        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 1, 2);
+
+        // Mark all as not loading
+        for info in &mut pathlist.paths {
+            info.data = PreloadImage::NotLoading;
+        }
+
+        let next = schedule_next_preload_image_after_one_finished(&pathlist);
+        assert_eq!(next, None);
+    }
 }
