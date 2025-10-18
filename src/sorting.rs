@@ -154,31 +154,11 @@ fn user_pressed_previous_image(model: &mut crate::Model) -> Effect {
 }
 
 fn user_pressed_next_image(model: &mut crate::Model) -> Effect {
-    // Check if pathlist is empty
-    if model.pathlist.paths.is_empty() {
-        return Effect::None;
+    let preload_path = model.pathlist.step_right(&model.config);
+    match preload_path {
+        Some(path) => return Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap()),
+        None => return Effect::None,
     }
-
-    // We're already at the far right
-    if model.pathlist.index == model.pathlist.paths.len() - 1 {
-        return Effect::None;
-    }
-
-    model.pathlist.index += 1;
-    if model.pathlist.paths.len() > model.pathlist.index + model.pathlist.preload_front_num {
-        let new_preload_index =
-            (model.pathlist.index as isize + model.pathlist.preload_front_num as isize) as usize;
-        let info = &mut model.pathlist.paths[new_preload_index];
-        if matches!(info.data, crate::PreloadImage::NotLoading) {
-            info.data = crate::PreloadImage::Loading(info.path.clone());
-            return Effect::PreloadImages(
-                vec![info.path.clone()],
-                model.canvas_dimensions.unwrap(),
-            );
-        }
-    }
-
-    Effect::None
 }
 
 fn tag_and_move_on(model: &mut crate::Model, tag: Tag) -> Effect {

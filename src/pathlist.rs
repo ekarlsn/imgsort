@@ -1,4 +1,6 @@
-use crate::{sorting::Tag, ImageInfo, Metadata, PreloadImage, PRELOAD_IN_FLIGHT};
+use std::cmp::min;
+
+use crate::{sorting::Tag, Config, ImageInfo, Metadata, PreloadImage, PRELOAD_IN_FLIGHT};
 use itertools::Itertools;
 
 #[derive(Debug)]
@@ -52,6 +54,39 @@ impl PathList {
             paths.push(p);
         }
         paths
+    }
+
+    pub fn step_right(&mut self, config: &Config) -> Option<String> {
+        // Check if pathlist is empty
+        if self.paths.is_empty() {
+            return None;
+        }
+
+        // We're already at the far right
+        if self.index == self.paths.len() - 1 {
+            return None;
+        }
+
+        self.index += 1;
+        let max_preload_index = min(self.index + config.preload_front_num, self.paths.len());
+        for i in self.index..max_preload_index {
+            if i < self.paths.len() {
+                let e = &mut self.paths[i];
+                let info = &e.data;
+                let should_preload = match info {
+                    PreloadImage::Loaded(_) => false,
+                    PreloadImage::Loading(_) => false,
+                    PreloadImage::NotLoading => true,
+                };
+                if should_preload {
+                    let p = e.path.clone();
+                    e.data = PreloadImage::Loading(p.clone());
+                    return Some(p);
+                }
+            }
+        }
+
+        None
     }
 
     pub fn tag_of(&self, path: &str) -> Option<Tag> {
