@@ -1,7 +1,10 @@
 # Tool to manually sort images
 
-The tool will allow you to tag images as you browse through them, and then move them into a specific subfolder based on the tags you've assigned to them.
-	It's meant to load images really fast. It's not meant to be a full fledged image viewer.
+A tool to help you manually sort images by browsing through them and assigning tags. The tags can then be used to move images into specific subfolders.
+
+It's not meant to be a full fledged image viewer.
+
+🚀 Blazingly fast
 
 ## Usage
 
@@ -16,6 +19,7 @@ Run it in the folder you want to sort images
 - [x] Picture placeholder the same size as a picture
 - [x] Preload current image first
 - [x] Tabbed view, with iced_aw tabbed widget
+- [x] Add "Blazingly fast" to the readme
 - [ ] Fix crash on delete tag
 - [ ] Internationalize
 - [ ] Navigate folders
