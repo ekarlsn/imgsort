@@ -125,32 +125,11 @@ pub fn keybind_char_to_tag(c: &str) -> Option<Tag> {
 }
 
 fn user_pressed_previous_image(model: &mut crate::Model) -> Effect {
-    // Check if pathlist is empty
-    if model.pathlist.paths.is_empty() {
-        return Effect::None;
+    let preload_path = model.pathlist.step_left(&model.config);
+    match preload_path {
+        Some(path) => return Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap()),
+        None => return Effect::None,
     }
-
-    // We're already at the far left
-    if model.pathlist.index == 0 {
-        return Effect::None;
-    }
-
-    model.pathlist.index -= 1;
-
-    if model.pathlist.index >= model.pathlist.preload_back_num {
-        let new_preload_index =
-            (model.pathlist.index as isize - model.pathlist.preload_back_num as isize) as usize;
-        let info = &mut model.pathlist.paths[new_preload_index];
-        if matches!(info.data, crate::PreloadImage::NotLoading) {
-            info.data = crate::PreloadImage::Loading(info.path.clone());
-            return Effect::PreloadImages(
-                vec![info.path.clone()],
-                model.canvas_dimensions.unwrap(),
-            );
-        }
-    }
-
-    Effect::None
 }
 
 fn user_pressed_next_image(model: &mut crate::Model) -> Effect {

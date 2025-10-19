@@ -10,12 +10,10 @@ use log::debug;
 pub struct PathList {
     pub paths: Vec<ImageInfo>,
     pub index: usize,
-    pub preload_back_num: usize,
-    pub preload_front_num: usize,
 }
 
 impl PathList {
-    pub fn new(paths: Vec<String>, preload_back_num: usize, preload_front_num: usize) -> Self {
+    pub fn new(paths: Vec<String>) -> Self {
         let paths = paths
             .iter()
             .map(|path| ImageInfo {
@@ -24,12 +22,7 @@ impl PathList {
                 metadata: Metadata { tag: None },
             })
             .collect();
-        Self {
-            paths,
-            index: 0,
-            preload_back_num,
-            preload_front_num,
-        }
+        Self { paths, index: 0 }
     }
 
     // Preload order?
@@ -37,12 +30,13 @@ impl PathList {
     // back = 10, how many you start preloading backwards
     // front = 30, how many you start preloading forwards
     // in_flight = 8 (Or number of cores?), how many you preload at the same time
-    pub fn get_initial_preload_images(&mut self) -> Vec<String> {
-        let from = self
-            .index
-            .saturating_sub(std::cmp::min(self.preload_back_num, PRELOAD_IN_FLIGHT / 2));
+    pub fn get_initial_preload_images(&mut self, config: &Config) -> Vec<String> {
+        let from = self.index.saturating_sub(std::cmp::min(
+            config.preload_back_num,
+            PRELOAD_IN_FLIGHT / 2,
+        ));
         let to = *[
-            self.index + self.preload_front_num + 1,
+            self.index + config.preload_front_num + 1,
             self.paths.len(),
             from + PRELOAD_IN_FLIGHT,
         ]
@@ -74,17 +68,32 @@ impl PathList {
         self.index += 1;
 
         // Check if we've already filled the preload cache size
-        if self
-            .paths
-            .iter()
-            .filter(|image: &&ImageInfo| is_loading(*image))
-            .count()
-            >= PRELOAD_IN_FLIGHT
-        {
+        if self.get_counts().loading >= PRELOAD_IN_FLIGHT {
             return None;
         }
 
         self.preload_next_right(config)
+    }
+
+    pub fn step_left(&mut self, config: &Config) -> Option<String> {
+        // Check if pathlist is empty
+        if self.paths.is_empty() {
+            return None;
+        }
+
+        // We're already at the far left
+        if self.index == 0 {
+            return None;
+        }
+
+        self.index -= 1;
+
+        // Check if we've already filled the preload cache size
+        if self.get_counts().loading >= PRELOAD_IN_FLIGHT {
+            return None;
+        }
+
+        self.preload_next_left(config)
     }
 
     fn preload_next_right(&mut self, config: &Config) -> Option<String> {
@@ -94,6 +103,25 @@ impl PathList {
         );
         debug!("Preloading next right image, up to {max_preload_index}");
         for i in self.index..max_preload_index {
+            let e = &mut self.paths[i];
+            if is_not_loading(e) {
+                let p = e.path.clone();
+                e.data = PreloadImage::Loading(p.clone());
+                return Some(p);
+            }
+        }
+
+        None
+    }
+
+    fn preload_next_left(&mut self, config: &Config) -> Option<String> {
+        let min_preload_index = if self.index > config.preload_back_num {
+            self.index - config.preload_back_num
+        } else {
+            0
+        };
+        debug!("Preloading next left image, up to {min_preload_index}");
+        for i in (min_preload_index..self.index).rev() {
             let e = &mut self.paths[i];
             if is_not_loading(e) {
                 let p = e.path.clone();
@@ -220,13 +248,15 @@ mod tests {
     use super::*;
     use crate::sorting::Tag;
 
-    fn create_test_pathlist(paths: Vec<&str>, back: usize, front: usize) -> PathList {
-        PathList::new(
-            paths.into_iter().map(|s| s.to_string()).collect(),
-            back,
-            front,
-        )
+    fn create_test_pathlist(paths: Vec<&str>) -> PathList {
+        PathList::new(paths.into_iter().map(|s| s.to_string()).collect())
     }
+
+    const TEST_CONFIG: Config = Config {
+        preload_back_num: 10,
+        preload_front_num: 30,
+        scale_down_size: (800, 100),
+    };
 
     fn create_test_config() -> Config {
         Config {
@@ -238,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_current_prev_next() {
-        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 1, 2);
+        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"]);
 
         // At index 0
         assert_eq!(pathlist.current().path, "img1.jpg");
@@ -260,8 +290,8 @@ mod tests {
 
     #[test]
     fn test_get_initial_preload_images_small_list() {
-        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 2, 5);
-        let preload = pathlist.get_initial_preload_images();
+        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"]);
+        let preload = pathlist.get_initial_preload_images(&TEST_CONFIG);
 
         // With small list, should preload all images
         assert_eq!(preload.len(), 3);
@@ -271,25 +301,25 @@ mod tests {
     #[test]
     fn test_get_list_preloads_finish() {
         let paths: Vec<String> = (0..80).map(|i| format!("img{}.jpg", i)).collect();
-        let mut pathlist = PathList::new(paths, 3, 7);
-        let preload = pathlist.get_initial_preload_images();
+        let mut pathlist = PathList::new(paths);
+        let preload = pathlist.get_initial_preload_images(&TEST_CONFIG);
 
         // Should be limited by PRELOAD_IN_FLIGHT (8)
         assert_eq!(preload.len(), 8);
         assert_eq!(preload[0], "img0.jpg");
         assert_eq!(preload[7], "img7.jpg");
 
-        let config = create_test_config();
         // Nothing gets scheduled, because too many in flight already
-        let next_preload = schedule_next_preload_image_after_one_finished(&mut pathlist, &config);
+        let next_preload =
+            schedule_next_preload_image_after_one_finished(&mut pathlist, &TEST_CONFIG);
         assert_eq!(next_preload.unwrap(), "img8.jpg");
     }
 
     #[test]
     fn test_get_initial_preload_images_large_list() {
         let paths: Vec<String> = (0..20).map(|i| format!("img{}.jpg", i)).collect();
-        let mut pathlist = PathList::new(paths, 3, 7);
-        let preload = pathlist.get_initial_preload_images();
+        let mut pathlist = PathList::new(paths);
+        let preload = pathlist.get_initial_preload_images(&TEST_CONFIG);
 
         // Should be limited by PRELOAD_IN_FLIGHT (8)
         assert_eq!(preload.len(), 8);
@@ -300,10 +330,10 @@ mod tests {
     #[test]
     fn test_get_initial_preload_images_middle_index() {
         let paths: Vec<String> = (0..20).map(|i| format!("img{}.jpg", i)).collect();
-        let mut pathlist = PathList::new(paths, 2, 5);
+        let mut pathlist = PathList::new(paths);
         pathlist.index = 10;
 
-        let preload = pathlist.get_initial_preload_images();
+        let preload = pathlist.get_initial_preload_images(&TEST_CONFIG);
 
         // Should include some behind (limited by PRELOAD_IN_FLIGHT/2 = 4) and ahead
         assert_eq!(preload.len(), 8);
@@ -314,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_tag_of() {
-        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 1, 2);
+        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"]);
 
         // Initially no tags
         assert_eq!(pathlist.tag_of("img1.jpg"), None);
@@ -330,7 +360,7 @@ mod tests {
     #[test]
     fn test_schedule_next_preload_image_after_one_finished() {
         let mut pathlist =
-            create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg", "img4.jpg"], 1, 2);
+            create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg", "img4.jpg"]);
         pathlist.index = 1; // Start at img2.jpg
 
         // Should return img2.jpg (current)
@@ -355,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_schedule_next_preload_no_loading_images() {
-        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 1, 2);
+        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"]);
         pathlist.index = 1; // Start at img2.jpg
 
         let config = create_test_config();

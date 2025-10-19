@@ -182,7 +182,7 @@ impl Model {
                 active_tab: TabId::Main,
                 selected_action_tag: None,
                 task_manager: TaskManager::new(),
-                pathlist: PathList::new(vec![], 0, 0),
+                pathlist: PathList::new(vec![]),
                 expanded_dropdown: None,
                 editing_tag_name: None,
                 tag_names: TagNames::new(),
@@ -245,30 +245,21 @@ impl Model {
                     })
                     .collect();
 
-                self.pathlist = PathList {
-                    index,
-                    paths,
-                    preload_back_num: self.pathlist.preload_back_num,
-                    preload_front_num: self.pathlist.preload_front_num,
-                };
+                self.pathlist = PathList { index, paths };
             }
 
             _ => {
                 debug!("Going to new sorting model");
 
                 self.state = ModelState::Sorting;
-                self.pathlist = PathList::new(
-                    paths.clone(),
-                    self.config.preload_back_num,
-                    self.config.preload_front_num,
-                );
+                self.pathlist = PathList::new(paths.clone());
                 self.expanded_dropdown = None;
                 self.editing_tag_name = None;
                 self.tag_names = TagNames::new();
                 self.canvas_dimensions = None;
             }
         };
-        let preload_images = self.pathlist.get_initial_preload_images();
+        let preload_images = self.pathlist.get_initial_preload_images(&self.config);
 
         if let Some(dimensions) = self.canvas_dimensions {
             Effect::PreloadImages(preload_images, dimensions)
