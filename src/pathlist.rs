@@ -149,10 +149,12 @@ impl PathList {
         &mut self,
         path: &str,
         image: ImageData,
+        thumb: ImageData,
         config: &Config,
     ) -> Option<String> {
         if let Some(index) = self.paths.iter().position(|info| info.path == path) {
-            self.paths[index].data = PreloadImage::Loaded(image);
+            self.paths[index].data =
+                PreloadImage::Loaded(crate::LoadedImageAndThumb { image, thumb });
         }
 
         schedule_next_preload_image_after_one_finished(self, config)

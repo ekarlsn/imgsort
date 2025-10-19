@@ -7,7 +7,9 @@ use std::cmp::min;
 use std::collections::HashMap;
 
 use crate::image_widget::PixelCanvas;
-use crate::{Config, Effect, ImageData, ImageInfo, Message, PathList, PreloadImage};
+use crate::{
+    Config, Effect, ImageData, ImageInfo, LoadedImageAndThumb, Message, PathList, PreloadImage,
+};
 
 // Constants
 pub const TAGGING_CHARS: &str = "aoeupy";
@@ -30,7 +32,7 @@ pub enum SortingMessage {
     UserPressedCancelRenameTag,
     UserEditTagName(String),
     UserPressedTagMenu(Option<Tag>),
-    ImagePreloaded(String, ImageData),
+    ImagePreloaded(String, ImageData, ImageData),
     KeyboardEvent(iced::keyboard::Event),
     CanvasResized(Dim),
 }
@@ -159,7 +161,7 @@ fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a
 fn view_image<'a>(
     image: &'a ImageInfo,
     tag_names: &TagNames,
-    dim: Dim,
+    dim: Option<Dim>,
     highlight: bool,
     is_main_image: bool,
 ) -> Element<'a, Message> {
@@ -169,8 +171,13 @@ fn view_image<'a>(
         (name.to_owned(), color)
     });
     match &image.data {
-        PreloadImage::Loaded(image) => {
-            view_loaded_image(Some(image), name_and_color, dim, highlight, is_main_image)
+        PreloadImage::Loaded(LoadedImageAndThumb { image, thumb }) => {
+            if dim.is_some() {
+                // TODO: bad way to figure out that it's a thumbnail
+                view_loaded_image(Some(thumb), name_and_color, dim, highlight, is_main_image)
+            } else {
+                view_loaded_image(Some(image), name_and_color, dim, highlight, is_main_image)
+            }
         }
         PreloadImage::Loading(_) | PreloadImage::NotLoading => {
             view_loaded_image(None, name_and_color, dim, highlight, is_main_image)
@@ -181,18 +188,17 @@ fn view_image<'a>(
 fn view_loaded_image(
     image: Option<&ImageData>,
     name_and_color: Option<(String, iced::Color)>,
-    dim: Dim,
+    dim: Option<Dim>,
     highlight: bool,
     send_resize_messages: bool,
 ) -> Element<Message> {
     let pixel_canvas = PixelCanvas::new(image, send_resize_messages);
-    let (w, h) = if !send_resize_messages {
-        (
+    let (w, h) = match dim {
+        Some(dim) => (
             Length::Fixed(dim.width as f32),
             Length::Fixed(dim.height as f32),
-        )
-    } else {
-        (Length::Fill, Length::Fill)
+        ),
+        None => (Length::Fill, Length::Fill),
     };
     let canvas_widget = canvas(pixel_canvas).width(w).height(h);
 
@@ -404,8 +410,11 @@ pub fn update_sorting_model(
     match message {
         SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
         SortingMessage::UserPressedNextImage => user_pressed_next_image(model),
-        SortingMessage::ImagePreloaded(path, image) => {
-            if let Some(path) = model.pathlist.image_preload_complete(&path, image, config) {
+        SortingMessage::ImagePreloaded(path, image, thumb) => {
+            if let Some(path) = model
+                .pathlist
+                .image_preload_complete(&path, image, thumb, config)
+            {
                 crate::Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap())
             } else {
                 crate::Effect::None
@@ -500,7 +509,7 @@ pub fn view_sorting_model<'a>(
         return widget::text("No images found").into();
     }
 
-    let main_image_view = view_image_with_thumbs(SortingViewStyle::NoThumbnails, model, config);
+    let main_image_view = view_image_with_thumbs(SortingViewStyle::ThumbsAbove, model, config);
 
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
     debug!("Preload status: {}", preload_status_string);
@@ -566,51 +575,17 @@ fn view_image_with_thumbs<'a>(
     model: &'a crate::Model,
     config: &'a Config,
 ) -> Element<'a, Message> {
-    let img_dim = Dim {
-        width: config.scale_down_size.0,
-        height: config.scale_down_size.1,
-    };
     match sorting_view_style {
-        SortingViewStyle::BeforeAfter => view_thumbnails_before_after(model, img_dim),
-        SortingViewStyle::NoThumbnails => view_with_no_thumbnails(model, img_dim),
-        SortingViewStyle::ThumbsAbove => view_with_thumbnails_on_top(model, img_dim),
+        SortingViewStyle::NoThumbnails => view_with_no_thumbnails(model),
+        SortingViewStyle::ThumbsAbove => view_with_thumbnails_on_top(model),
     }
 }
 
-fn view_thumbnails_before_after(model: &crate::Model, img_dim: Dim) -> Element<Message> {
-    let thumbs_dim = Dim {
-        width: 100,
-        height: 100,
-    };
-
-    let prev_image = model
-        .pathlist
-        .prev()
-        .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false, false))
-        .unwrap_or(placeholder_text("No previous image", &thumbs_dim).into());
-
+fn view_with_no_thumbnails(model: &crate::Model) -> Element<Message> {
     let image = view_image(
         model.pathlist.current(),
         &model.tag_names,
-        img_dim,
-        false,
-        true,
-    );
-
-    let next_image = model
-        .pathlist
-        .next()
-        .map(|image| view_image(image, &model.tag_names, thumbs_dim.clone(), false, false))
-        .unwrap_or(placeholder_text("No next image", &thumbs_dim).into());
-
-    row![prev_image, image, next_image].into()
-}
-
-fn view_with_no_thumbnails(model: &crate::Model, img_dim: Dim) -> Element<Message> {
-    let image = view_image(
-        model.pathlist.current(),
-        &model.tag_names,
-        img_dim,
+        None,
         false,
         true,
     );
@@ -618,16 +593,11 @@ fn view_with_no_thumbnails(model: &crate::Model, img_dim: Dim) -> Element<Messag
     image.into()
 }
 
-fn view_with_thumbnails_on_top(model: &crate::Model, img_dim: Dim) -> Element<Message> {
-    let thumbs_dim = Dim {
-        width: 100,
-        height: 100,
-    };
-
+fn view_with_thumbnails_on_top(model: &crate::Model) -> Element<Message> {
     let image = view_image(
         model.pathlist.current(),
         &model.tag_names,
-        img_dim,
+        None,
         false,
         true,
     );
@@ -647,18 +617,15 @@ fn view_with_thumbnails_on_top(model: &crate::Model, img_dim: Dim) -> Element<Me
     for i in from..=to {
         let img = &model.pathlist.paths[i];
         let highlight = i == model.pathlist.index;
-        let thumb = view_image(img, &model.tag_names, thumbs_dim.clone(), highlight, false);
+        let thumb = view_image(
+            img,
+            &model.tag_names,
+            Some(model.config.thumbnail_size),
+            highlight,
+            false,
+        );
         thumbs.push(thumb);
     }
 
     column![widget::Row::from_vec(thumbs), image].into()
-}
-
-enum SortingViewStyle {
-    #[allow(unused)]
-    NoThumbnails,
-    #[allow(unused)]
-    ThumbsAbove,
-    #[allow(unused)]
-    BeforeAfter,
 }

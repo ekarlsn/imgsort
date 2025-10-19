@@ -22,6 +22,7 @@ Run it in the folder you want to sort images
 - [x] Add "Blazingly fast" to the readme
 - [x] Preloading images should be Loading, not Out of range
 - [x] Size detection
+- [ ] Load thumbnails in parallell
 - [ ] Fix crash on delete tag
 - [ ] Internationalize
 - [ ] Navigate folders

@@ -99,6 +99,8 @@ pub struct Config {
     preload_back_num: usize,
     preload_front_num: usize,
     scale_down_size: (u32, u32),
+    thumbnail_size: Dim,
+    thumbnail_style: SortingViewStyle,
 }
 
 #[derive(Debug)]
@@ -144,7 +146,7 @@ pub enum Message {
     UserPressedActionTag(Tag),
     UserPressedActionBack,
     ListDirCompleted(TaskId, Vec<String>),
-    ImagePreloaded(TaskId, String, ImageData),
+    ImagePreloaded(TaskId, String, ImageData, ImageData),
     KeyboardEventOccurred(iced::keyboard::Event),
     Settings(SettingsMessage),
     Sorting(SortingMessage),
@@ -154,8 +156,14 @@ pub enum Message {
 #[derive(Debug)]
 pub enum PreloadImage {
     Loading(String),
-    Loaded(ImageData),
+    Loaded(LoadedImageAndThumb),
     NotLoading,
+}
+
+#[derive(Debug)]
+pub struct LoadedImageAndThumb {
+    pub image: ImageData,
+    pub thumb: ImageData,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -173,6 +181,11 @@ impl Model {
             preload_back_num: 10,
             preload_front_num: 30,
             scale_down_size: (800, 100),
+            thumbnail_size: Dim {
+                width: 100,
+                height: 100,
+            },
+            thumbnail_style: SortingViewStyle::ThumbsAbove,
         };
         (
             Self {
@@ -310,12 +323,12 @@ impl Model {
                     self.go_to_sorting_model(paths)
                 }
             }
-            Message::ImagePreloaded(task_id, path, image) => {
+            Message::ImagePreloaded(task_id, path, image, thumb) => {
                 self.task_manager.report_completed_task(task_id);
                 debug!("Image preload completed for task {:?}", task_id);
                 match self.state {
                     ModelState::Sorting => {
-                        self.update_sorting(SortingMessage::ImagePreloaded(path, image))
+                        self.update_sorting(SortingMessage::ImagePreloaded(path, image, thumb))
                     }
                     _ => Effect::None,
                 }
@@ -534,7 +547,7 @@ fn preload_images_task(
 
         // Transform the task result to include task_id
         let complete_task = preload_task.map(move |result| match result {
-            Ok((path4, image)) => Message::ImagePreloaded(task_id, path4, image),
+            Ok((path4, image, thumb)) => Message::ImagePreloaded(task_id, path4, image, thumb),
             Err(_) => panic!("Image preload failed"),
         });
 
@@ -543,12 +556,17 @@ fn preload_images_task(
     Task::batch(tasks)
 }
 
-fn preload_image(path: String, dim: Dim, _config: Config) -> (String, ImageData) {
-    let image = ImageReader::open(path.as_str())
+fn preload_image(path: String, dim: Dim, config: Config) -> (String, ImageData, ImageData) {
+    let image = get_resized_image(&path, dim);
+    let thumb = get_resized_image(&path, config.thumbnail_size);
+    (path, image, thumb)
+}
+
+fn get_resized_image(path: &str, dim: Dim) -> ImageData {
+    let image = ImageReader::open(path)
         .unwrap()
         .decode()
         .unwrap()
-        // TODO this is the resize call
         .resize(dim.width, dim.height, image::imageops::FilterType::Triangle)
         .to_rgba8();
     let width = image.width();
@@ -558,7 +576,13 @@ fn preload_image(path: String, dim: Dim, _config: Config) -> (String, ImageData)
         width,
         height,
     };
-    (path, image)
+    image
+}
+
+#[derive(Debug, Clone)]
+enum SortingViewStyle {
+    NoThumbnails,
+    ThumbsAbove,
 }
 
 #[cfg(test)]
