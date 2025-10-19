@@ -172,10 +172,9 @@ fn view_image<'a>(
         PreloadImage::Loaded(image) => {
             view_loaded_image(Some(image), name_and_color, dim, highlight, is_main_image)
         }
-        PreloadImage::Loading(_path) => {
+        PreloadImage::Loading(_) | PreloadImage::NotLoading => {
             view_loaded_image(None, name_and_color, dim, highlight, is_main_image)
         }
-        PreloadImage::NotLoading => placeholder_text("Image not loaded", &dim).into(),
     }
 }
 
@@ -501,7 +500,7 @@ pub fn view_sorting_model<'a>(
         return widget::text("No images found").into();
     }
 
-    let main_image_view = view_image_with_thumbs(SortingViewStyle::ThumbsAbove, model, config);
+    let main_image_view = view_image_with_thumbs(SortingViewStyle::NoThumbnails, model, config);
 
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
     debug!("Preload status: {}", preload_status_string);
@@ -646,7 +645,7 @@ fn view_with_thumbnails_on_top(model: &crate::Model, img_dim: Dim) -> Element<Me
         model.pathlist.paths.len() - 1,
     );
     for i in from..=to {
-        let img = &model.pathlist.paths[i as usize];
+        let img = &model.pathlist.paths[i];
         let highlight = i == model.pathlist.index;
         let thumb = view_image(img, &model.tag_names, thumbs_dim.clone(), highlight, false);
         thumbs.push(thumb);
