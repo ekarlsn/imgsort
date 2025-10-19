@@ -324,7 +324,7 @@ impl Model {
                 debug!("Image preload completed for task {:?}", task_id);
                 match self.state {
                     ModelState::Sorting => {
-                        self.update_sorting(SortingMessage::ImagePreloaded(task_id, path, image))
+                        self.update_sorting(SortingMessage::ImagePreloaded(path, image))
                     }
                     _ => Effect::None,
                 }

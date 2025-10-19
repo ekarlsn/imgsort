@@ -1,6 +1,8 @@
 use std::cmp::min;
 
-use crate::{sorting::Tag, Config, ImageInfo, Metadata, PreloadImage, PRELOAD_IN_FLIGHT};
+use crate::{
+    sorting::Tag, Config, ImageData, ImageInfo, Metadata, PreloadImage, PRELOAD_IN_FLIGHT,
+};
 use itertools::Itertools;
 
 #[derive(Debug)]
@@ -87,6 +89,14 @@ impl PathList {
         }
 
         None
+    }
+
+    pub fn image_preload_complete(&mut self, path: &str, image: ImageData) -> Option<String> {
+        if let Some(index) = self.paths.iter().position(|info| info.path == path) {
+            self.paths[index].data = PreloadImage::Loaded(image);
+        }
+
+        schedule_next_preload_image_after_one_finished(&self)
     }
 
     pub fn tag_of(&self, path: &str) -> Option<Tag> {

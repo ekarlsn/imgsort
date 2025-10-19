@@ -29,7 +29,7 @@ pub enum SortingMessage {
     UserPressedCancelRenameTag,
     UserEditTagName(String),
     UserPressedTagMenu(Option<Tag>),
-    ImagePreloaded(crate::task_manager::TaskId, String, ImageData),
+    ImagePreloaded(String, ImageData),
     KeyboardEvent(iced::keyboard::Event),
     CanvasResized(Dim),
 }
@@ -195,7 +195,7 @@ fn view_image<'a>(
         PreloadImage::Loading(_path) => {
             view_loaded_image(None, name_and_color, dim, highlight, is_main_image)
         }
-        PreloadImage::NotLoading => placeholder_text("Out of range", &dim).into(),
+        PreloadImage::NotLoading => placeholder_text("Image not loaded", &dim).into(),
     }
 }
 
@@ -428,18 +428,8 @@ pub fn update_sorting_model(
     match message {
         SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
         SortingMessage::UserPressedNextImage => user_pressed_next_image(model),
-        SortingMessage::ImagePreloaded(_task_id, path, image) => {
-            model
-                .pathlist
-                .paths
-                .iter_mut()
-                .find(|info| info.path == path)
-                .map(|info| {
-                    info.data = crate::PreloadImage::Loaded(image);
-                    info
-                });
-
-            if let Some(path) = schedule_next_preload_image_after_one_finished(&model.pathlist) {
+        SortingMessage::ImagePreloaded(path, image) => {
+            if let Some(path) = model.pathlist.image_preload_complete(&path, image) {
                 crate::Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap())
             } else {
                 crate::Effect::None
