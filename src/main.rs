@@ -422,9 +422,7 @@ fn effect_to_task(effect: Effect, model: &mut Model, _config: Config) -> Task<Me
         Effect::LsDir => {
             model.task_manager.cancel_all();
             let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
-            let (task_id, task) = model
-                .task_manager
-                .start_cancellable_task(TaskType::LsDir, future);
+            let (task_id, task) = model.task_manager.start_task(TaskType::LsDir, future);
             task.map(move |res| match res {
                 Ok(paths) => Message::ListDirCompleted(task_id, paths),
                 Err(_) => panic!("Could not list directory"),
@@ -541,8 +539,7 @@ fn preload_images_task(
         let future = tokio::task::spawn_blocking(move || preload_image(path_clone, dim2, config2));
 
         // Start cancellable task using TaskManager
-        let (task_id, preload_task) =
-            task_manager.start_cancellable_task(TaskType::PreloadImage, future);
+        let (task_id, preload_task) = task_manager.start_task(TaskType::PreloadImage, future);
 
         // Transform the task result to include task_id
         let complete_task = preload_task.map(move |result| match result {

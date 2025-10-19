@@ -1,11 +1,11 @@
 use iced::widget::{self, button, canvas, center, column, row, stack};
 use iced::{Color, Element, Length};
 use iced_aw::{drop_down, DropDown};
+use log::debug;
 use rust_i18n::t;
 use std::collections::HashMap;
 
 use crate::image_widget::PixelCanvas;
-use crate::pathlist::schedule_next_preload_image_after_one_finished;
 use crate::{Config, Effect, ImageData, ImageInfo, Message, PathList, PreloadImage};
 
 // Constants
@@ -272,16 +272,10 @@ fn preload_list_status_string_pathlist(
 ) -> String {
     let mut s = String::new();
     let total = pathlist.paths.len();
-    let loaded = pathlist
-        .paths
-        .iter()
-        .filter(|info| matches!(info.data, PreloadImage::Loaded(_)))
-        .count();
-    let loading = pathlist
-        .paths
-        .iter()
-        .filter(|info| matches!(info.data, PreloadImage::Loading(_)))
-        .count();
+    let counts = pathlist.get_counts();
+    let loaded = counts.loaded;
+    let loading = counts.loading;
+    let not_loading = counts.not_loading;
 
     // Get task manager information
     let (ls_dir_tasks, preload_tasks) = task_manager.get_task_counts();
@@ -289,6 +283,9 @@ fn preload_list_status_string_pathlist(
     s.push_str(&format!("Loaded: {loaded}/{total}"));
     if loading > 0 {
         s.push_str(&format!(", Loading: {loading}"));
+    }
+    if not_loading > 0 {
+        s.push_str(&format!(", Not loading: {not_loading}"));
     }
     if preload_tasks > 0 {
         s.push_str(&format!(", In flight: {preload_tasks}"));
@@ -423,13 +420,13 @@ fn tag_dropdown_button(text: &str, message: SortingMessage) -> Element<Message> 
 pub fn update_sorting_model(
     model: &mut crate::Model,
     message: SortingMessage,
-    _config: &crate::Config,
+    config: &crate::Config,
 ) -> crate::Effect {
     match message {
         SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
         SortingMessage::UserPressedNextImage => user_pressed_next_image(model),
         SortingMessage::ImagePreloaded(path, image) => {
-            if let Some(path) = model.pathlist.image_preload_complete(&path, image) {
+            if let Some(path) = model.pathlist.image_preload_complete(&path, image, config) {
                 crate::Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap())
             } else {
                 crate::Effect::None
@@ -527,6 +524,7 @@ pub fn view_sorting_model<'a>(
     let main_image_view = view_image_with_thumbs(SortingViewStyle::NoThumbnails, model, config);
 
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
+    debug!("Preload status: {}", preload_status_string);
 
     let mut tag_count = std::collections::HashMap::new();
 

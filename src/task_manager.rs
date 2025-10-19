@@ -25,7 +25,7 @@ pub enum TaskType {
 struct TaskInfo {
     task_type: TaskType,
     #[allow(dead_code)] // Used for Drop behavior to cancel tasks
-    abort_handle: Option<Handle>,
+    abort_handle: Handle,
 }
 
 #[derive(Debug, Default)]
@@ -41,7 +41,7 @@ impl TaskManager {
     }
 
     /// Start a cancellable task (like LsDir or PreloadImage)
-    pub fn start_cancellable_task<T>(
+    pub fn start_task<T>(
         &mut self,
         task_type: TaskType,
         future: impl std::future::Future<Output = T> + 'static + Send,
@@ -63,11 +63,11 @@ impl TaskManager {
             task_id,
             TaskInfo {
                 task_type: task_type.clone(),
-                abort_handle: Some(abort_on_drop_handle),
+                abort_handle: abort_on_drop_handle,
             },
         );
 
-        debug!("Started cancellable task {:?}: {:?}", task_id, task_type);
+        debug!("Started task {:?}: {:?}", task_id, task_type);
 
         (task_id, abortable_task)
     }

@@ -4,6 +4,7 @@ use crate::{
     sorting::Tag, Config, ImageData, ImageInfo, Metadata, PreloadImage, PRELOAD_IN_FLIGHT,
 };
 use itertools::Itertools;
+use log::debug;
 
 #[derive(Debug)]
 pub struct PathList {
@@ -37,7 +38,6 @@ impl PathList {
     // front = 30, how many you start preloading forwards
     // in_flight = 8 (Or number of cores?), how many you preload at the same time
     pub fn get_initial_preload_images(&mut self) -> Vec<String> {
-        let mut paths = Vec::new();
         let from = self
             .index
             .saturating_sub(std::cmp::min(self.preload_back_num, PRELOAD_IN_FLIGHT / 2));
@@ -50,8 +50,10 @@ impl PathList {
         .min()
         .expect("The iter is not empty");
 
+        let mut paths = Vec::new();
         for i in from..to {
             let p = self.paths[i].path.clone();
+            debug!("Setting loading state for index {i}");
             self.paths[i].data = PreloadImage::Loading(p.clone());
             paths.push(p);
         }
@@ -70,33 +72,62 @@ impl PathList {
         }
 
         self.index += 1;
-        let max_preload_index = min(self.index + config.preload_front_num, self.paths.len());
+
+        // Check if we've already filled the preload cache size
+        if self
+            .paths
+            .iter()
+            .filter(|image: &&ImageInfo| is_loading(*image))
+            .count()
+            >= PRELOAD_IN_FLIGHT
+        {
+            return None;
+        }
+
+        self.preload_next_right(config)
+    }
+
+    fn preload_next_right(&mut self, config: &Config) -> Option<String> {
+        let max_preload_index = min(
+            self.index + config.preload_front_num + 1,
+            self.paths.len() - 1,
+        );
+        debug!("Preloading next right image, up to {max_preload_index}");
         for i in self.index..max_preload_index {
-            if i < self.paths.len() {
-                let e = &mut self.paths[i];
-                let info = &e.data;
-                let should_preload = match info {
-                    PreloadImage::Loaded(_) => false,
-                    PreloadImage::Loading(_) => false,
-                    PreloadImage::NotLoading => true,
-                };
-                if should_preload {
-                    let p = e.path.clone();
-                    e.data = PreloadImage::Loading(p.clone());
-                    return Some(p);
-                }
+            let e = &mut self.paths[i];
+            if is_not_loading(e) {
+                let p = e.path.clone();
+                e.data = PreloadImage::Loading(p.clone());
+                return Some(p);
             }
         }
 
         None
     }
 
-    pub fn image_preload_complete(&mut self, path: &str, image: ImageData) -> Option<String> {
+    pub fn get_counts(&self) -> ImageStateCounts {
+        ImageStateCounts {
+            loaded: self.paths.iter().filter(|image| is_loaded(image)).count(),
+            loading: self.paths.iter().filter(|image| is_loading(image)).count(),
+            not_loading: self
+                .paths
+                .iter()
+                .filter(|image| is_not_loading(image))
+                .count(),
+        }
+    }
+
+    pub fn image_preload_complete(
+        &mut self,
+        path: &str,
+        image: ImageData,
+        config: &Config,
+    ) -> Option<String> {
         if let Some(index) = self.paths.iter().position(|info| info.path == path) {
             self.paths[index].data = PreloadImage::Loaded(image);
         }
 
-        schedule_next_preload_image_after_one_finished(&self)
+        schedule_next_preload_image_after_one_finished(self, config)
     }
 
     pub fn tag_of(&self, path: &str) -> Option<Tag> {
@@ -127,26 +158,60 @@ impl PathList {
     }
 }
 
-pub fn schedule_next_preload_image_after_one_finished(pathlist: &PathList) -> Option<String> {
+fn schedule_next_preload_image_after_one_finished(
+    pathlist: &mut PathList,
+    config: &Config,
+) -> Option<String> {
+    // Don't need to check in-flight num here, since one is just completed, leaving a space
     let curr = pathlist.index;
 
-    let forward = pathlist.paths.iter().skip(curr);
+    let forward = pathlist.paths.iter().enumerate().skip(curr);
     let rev = pathlist
         .paths
         .iter()
+        .enumerate()
         .rev()
         .skip(pathlist.paths.len() - curr);
 
-    for e in forward.interleave(rev) {
-        let loading = match e.data {
-            PreloadImage::Loading(_) => true,
-            _ => false,
-        };
-        if loading {
-            return Some(e.path.clone());
+    let mut should_preload = None;
+    for (i, e) in forward.interleave(rev) {
+        if is_not_loading(e)
+            && i <= curr + config.preload_front_num
+            && i >= curr - min(config.preload_back_num, curr)
+        {
+            debug!("Setting loading state for index {i}");
+            should_preload = Some((i, e.path.clone()));
         }
     }
-    None
+    match should_preload {
+        Some((i, path)) => {
+            pathlist.paths[i].data = PreloadImage::Loading(path.clone());
+            Some(path)
+        }
+        None => None,
+    }
+}
+
+fn is_loading(image: &ImageInfo) -> bool {
+    match image.data {
+        PreloadImage::Loading(_) => true,
+        _ => false,
+    }
+}
+
+#[allow(dead_code)] // For symmetry
+fn is_loaded(image: &ImageInfo) -> bool {
+    match image.data {
+        PreloadImage::Loaded(_) => true,
+        _ => false,
+    }
+}
+
+fn is_not_loading(image: &ImageInfo) -> bool {
+    match image.data {
+        PreloadImage::NotLoading => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -288,4 +353,10 @@ mod tests {
         let next = schedule_next_preload_image_after_one_finished(&pathlist);
         assert_eq!(next, None);
     }
+}
+
+pub struct ImageStateCounts {
+    pub loaded: usize,
+    pub loading: usize,
+    pub not_loading: usize,
 }
