@@ -20,7 +20,7 @@ impl PathList {
             .iter()
             .map(|path| ImageInfo {
                 path: path.clone(),
-                data: PreloadImage::Loading(path.clone()),
+                data: PreloadImage::NotLoading,
                 metadata: Metadata { tag: None },
             })
             .collect();
@@ -181,6 +181,7 @@ fn schedule_next_preload_image_after_one_finished(
         {
             debug!("Setting loading state for index {i}");
             should_preload = Some((i, e.path.clone()));
+            break;
         }
     }
     match should_preload {
@@ -227,6 +228,14 @@ mod tests {
         )
     }
 
+    fn create_test_config() -> Config {
+        Config {
+            preload_back_num: 10,
+            preload_front_num: 30,
+            scale_down_size: (800, 100),
+        }
+    }
+
     #[test]
     fn test_current_prev_next() {
         let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 1, 2);
@@ -251,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_get_initial_preload_images_small_list() {
-        let pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 2, 5);
+        let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 2, 5);
         let preload = pathlist.get_initial_preload_images();
 
         // With small list, should preload all images
@@ -262,7 +271,7 @@ mod tests {
     #[test]
     fn test_get_list_preloads_finish() {
         let paths: Vec<String> = (0..80).map(|i| format!("img{}.jpg", i)).collect();
-        let pathlist = PathList::new(paths, 3, 7);
+        let mut pathlist = PathList::new(paths, 3, 7);
         let preload = pathlist.get_initial_preload_images();
 
         // Should be limited by PRELOAD_IN_FLIGHT (8)
@@ -270,14 +279,16 @@ mod tests {
         assert_eq!(preload[0], "img0.jpg");
         assert_eq!(preload[7], "img7.jpg");
 
-        let next_preload = schedule_next_preload_image_after_one_finished(&pathlist);
+        let config = create_test_config();
+        // Nothing gets scheduled, because too many in flight already
+        let next_preload = schedule_next_preload_image_after_one_finished(&mut pathlist, &config);
         assert_eq!(next_preload.unwrap(), "img8.jpg");
     }
 
     #[test]
     fn test_get_initial_preload_images_large_list() {
         let paths: Vec<String> = (0..20).map(|i| format!("img{}.jpg", i)).collect();
-        let pathlist = PathList::new(paths, 3, 7);
+        let mut pathlist = PathList::new(paths, 3, 7);
         let preload = pathlist.get_initial_preload_images();
 
         // Should be limited by PRELOAD_IN_FLIGHT (8)
@@ -322,36 +333,34 @@ mod tests {
             create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg", "img4.jpg"], 1, 2);
         pathlist.index = 1; // Start at img2.jpg
 
-        // All are Loading initially, should return img2.jpg (current)
-        let next = schedule_next_preload_image_after_one_finished(&pathlist);
+        // Should return img2.jpg (current)
+        let config = create_test_config();
+        let next = schedule_next_preload_image_after_one_finished(&mut pathlist, &config);
         assert_eq!(next, Some("img2.jpg".to_string()));
 
-        // Mark current as loaded
-        pathlist.paths[1].data = PreloadImage::NotLoading;
-
-        // Should return next in interleaved order (img1.jpg is next in interleave: forward[img3,img4], rev[img1])
-        let next = schedule_next_preload_image_after_one_finished(&pathlist);
-        assert_eq!(next, Some("img1.jpg".to_string()));
-
-        // Mark img1 as loaded too
+        // Mark img1 as NotLoading
         pathlist.paths[0].data = PreloadImage::NotLoading;
 
+        // Should return next in interleaved order (img1.jpg is next in interleave: forward[img3,img4], rev[img1])
+        let next = schedule_next_preload_image_after_one_finished(&mut pathlist, &config);
+        assert_eq!(next, Some("img1.jpg".to_string()));
+
+        // Mark img3 as NotLoading
+        pathlist.paths[2].data = PreloadImage::NotLoading;
+
         // Should return img3.jpg (next forward in interleaved order)
-        let next = schedule_next_preload_image_after_one_finished(&pathlist);
+        let next = schedule_next_preload_image_after_one_finished(&mut pathlist, &config);
         assert_eq!(next, Some("img3.jpg".to_string()));
     }
 
     #[test]
     fn test_schedule_next_preload_no_loading_images() {
         let mut pathlist = create_test_pathlist(vec!["img1.jpg", "img2.jpg", "img3.jpg"], 1, 2);
+        pathlist.index = 1; // Start at img2.jpg
 
-        // Mark all as not loading
-        for info in &mut pathlist.paths {
-            info.data = PreloadImage::NotLoading;
-        }
-
-        let next = schedule_next_preload_image_after_one_finished(&pathlist);
-        assert_eq!(next, None);
+        let config = create_test_config();
+        let next = schedule_next_preload_image_after_one_finished(&mut pathlist, &config);
+        assert_eq!(next, Some("img2.jpg".to_string()));
     }
 }
 

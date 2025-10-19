@@ -27,7 +27,7 @@ use crate::sorting::Dim;
 use crate::task_manager::TaskCompleteResult;
 
 const PICTURE_DIR: &str = ".";
-const PRELOAD_IN_FLIGHT: usize = 8;
+pub const PRELOAD_IN_FLIGHT: usize = 8;
 #[allow(dead_code)]
 const PRELOAD_CACHE_SIZE: usize = 100;
 
@@ -95,33 +95,33 @@ enum ModelState {
 }
 
 #[derive(Debug, Clone)]
-struct Config {
+pub struct Config {
     preload_back_num: usize,
     preload_front_num: usize,
     scale_down_size: (u32, u32),
 }
 
 #[derive(Debug)]
-struct ImageInfo {
-    path: String,
-    data: PreloadImage,
-    metadata: Metadata,
+pub struct ImageInfo {
+    pub path: String,
+    pub data: PreloadImage,
+    pub metadata: Metadata,
 }
 
 #[derive(Debug)]
-struct Metadata {
-    tag: Option<Tag>,
+pub struct Metadata {
+    pub tag: Option<Tag>,
 }
 
 #[derive(Clone)]
-struct ImageData {
-    width: u32,
-    height: u32,
-    data: Vec<u8>,
+pub struct ImageData {
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-enum TabId {
+pub enum TabId {
     Main,
     Actions,
     Settings,
@@ -138,7 +138,7 @@ impl std::fmt::Debug for ImageData {
 }
 
 #[derive(Debug, Clone)]
-enum Message {
+pub enum Message {
     UserPressedSelectFolder,
     UserSelectedTab(TabId),
     UserPressedActionTag(Tag),
@@ -152,14 +152,14 @@ enum Message {
 }
 
 #[derive(Debug)]
-enum PreloadImage {
+pub enum PreloadImage {
     Loading(String),
     Loaded(ImageData),
     NotLoading,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum Effect {
+pub enum Effect {
     None,
     LsDir,
     PreloadImages(Vec<String>, Dim),
