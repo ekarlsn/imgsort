@@ -3,6 +3,7 @@ use iced::{Color, Element, Length};
 use iced_aw::{drop_down, DropDown};
 use log::debug;
 use rust_i18n::t;
+use std::cmp::min;
 use std::collections::HashMap;
 
 use crate::image_widget::PixelCanvas;
@@ -500,7 +501,7 @@ pub fn view_sorting_model<'a>(
         return widget::text("No images found").into();
     }
 
-    let main_image_view = view_image_with_thumbs(SortingViewStyle::NoThumbnails, model, config);
+    let main_image_view = view_image_with_thumbs(SortingViewStyle::ThumbsAbove, model, config);
 
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
     debug!("Preload status: {}", preload_status_string);
@@ -573,7 +574,7 @@ fn view_image_with_thumbs<'a>(
     match sorting_view_style {
         SortingViewStyle::BeforeAfter => view_thumbnails_before_after(model, img_dim),
         SortingViewStyle::NoThumbnails => view_with_no_thumbnails(model, img_dim),
-        SortingViewStyle::Thumbnails => view_with_thumbnails_on_top(model, img_dim),
+        SortingViewStyle::ThumbsAbove => view_with_thumbnails_on_top(model, img_dim),
     }
 }
 
@@ -632,30 +633,22 @@ fn view_with_thumbnails_on_top(model: &crate::Model, img_dim: Dim) -> Element<Me
         true,
     );
 
+    // Three on each side
     let num_thumbs = 3;
     let mut thumbs = Vec::new();
-    for i in
-        (model.pathlist.index as isize) - num_thumbs..=(model.pathlist.index as isize) + num_thumbs
-    {
-        let img = if i >= 0 && i < model.pathlist.paths.len() as isize {
-            Some(&model.pathlist.paths[i as usize])
-        } else {
-            None
-        };
-
-        let highlight = i == model.pathlist.index as isize;
-
-        let thumb = img
-            .map(|image| {
-                view_image(
-                    image,
-                    &model.tag_names,
-                    thumbs_dim.clone(),
-                    highlight,
-                    false,
-                )
-            })
-            .unwrap_or(placeholder_text("No thumbnail", &thumbs_dim).into());
+    let from = if model.pathlist.index > num_thumbs {
+        model.pathlist.index - num_thumbs
+    } else {
+        0
+    };
+    let to = min(
+        model.pathlist.index + num_thumbs,
+        model.pathlist.paths.len() - 1,
+    );
+    for i in from..=to {
+        let img = &model.pathlist.paths[i as usize];
+        let highlight = i == model.pathlist.index;
+        let thumb = view_image(img, &model.tag_names, thumbs_dim.clone(), highlight, false);
         thumbs.push(thumb);
     }
 
@@ -663,9 +656,10 @@ fn view_with_thumbnails_on_top(model: &crate::Model, img_dim: Dim) -> Element<Me
 }
 
 enum SortingViewStyle {
+    #[allow(unused)]
     NoThumbnails,
     #[allow(unused)]
-    Thumbnails,
+    ThumbsAbove,
     #[allow(unused)]
     BeforeAfter,
 }
