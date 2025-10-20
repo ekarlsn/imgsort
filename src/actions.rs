@@ -23,7 +23,9 @@ pub fn view_actions_tab(
                 column![
                     button("Delete").width(200),
                     button("Move").width(200),
-                    button("Copy").width(200),
+                    button("Copy")
+                        .width(200)
+                        .on_press(Message::UserPressedActionCopy(tag.clone())),
                 ]
                 .spacing(10)
                 .padding(20),

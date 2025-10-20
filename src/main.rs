@@ -145,6 +145,7 @@ pub enum Message {
     UserSelectedTab(TabId),
     UserPressedActionTag(Tag),
     UserPressedActionBack,
+    UserPressedActionCopy(Tag),
     ListDirCompleted(TaskId, Vec<String>),
     ImagePreloaded(TaskId, String, ImageData, ImageData),
     KeyboardEventOccurred(iced::keyboard::Event),
@@ -294,6 +295,7 @@ impl Model {
     fn update(&mut self, message: Message) -> Effect {
         debug!("Message: {message:?}");
         let effect = match message {
+            Message::UserPressedActionCopy(tag) => Effect::MoveImagesWithTag(tag),
             Message::UserSelectedTab(tab) => {
                 self.active_tab = tab;
                 self.selected_action_tag = None;
@@ -438,17 +440,12 @@ fn effect_to_task(effect: Effect, model: &mut Model, _config: Config) -> Task<Me
         Effect::MoveImagesWithTag(tag) => {
             let (files_to_move, tag_name) = {
                 let mut files_to_move = Vec::new();
-                let tag_name = match model.state {
-                    ModelState::Sorting => {
-                        for info in &model.pathlist.paths {
-                            if info.metadata.tag == Some(tag) {
-                                files_to_move.push(info.path.clone());
-                            }
-                        }
-                        model.tag_names.get(&tag)
+                for info in &model.pathlist.paths {
+                    if info.metadata.tag == Some(tag) {
+                        files_to_move.push(info.path.clone());
                     }
-                    _ => panic!("MoveImages effect should only be called in the sorting state"),
-                };
+                }
+                let tag_name = model.tag_names.get(&tag);
                 (files_to_move, tag_name)
             };
             if files_to_move.is_empty() {
@@ -456,6 +453,8 @@ fn effect_to_task(effect: Effect, model: &mut Model, _config: Config) -> Task<Me
                 Task::none()
             } else {
                 println!("mv {} \"{}\"", files_to_move.join(" "), tag_name);
+                // TODO use task manager
+                // TODO I think LsDir should be a chained effect?
                 mv_files_task(files_to_move, tag_name.to_string()).then(|_| {
                     // Create a new task for directory refresh after move
                     let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
