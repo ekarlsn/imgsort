@@ -579,11 +579,43 @@ fn get_resized_image(path: &str, dim: Dim) -> ImageData {
     image
 }
 
-#[derive(Debug, Clone)]
-enum SortingViewStyle {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SortingViewStyle {
     NoThumbnails,
     ThumbsAbove,
 }
 
+impl SortingViewStyle {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            SortingViewStyle::NoThumbnails => "No Thumbnails",
+            SortingViewStyle::ThumbsAbove => "Thumbnails Above",
+        }
+    }
+
+    pub fn all_variants() -> Vec<SortingViewStyle> {
+        vec![
+            SortingViewStyle::NoThumbnails,
+            SortingViewStyle::ThumbsAbove,
+        ]
+    }
+
+    pub fn from_display_name(name: &str) -> Option<SortingViewStyle> {
+        match name {
+            "No Thumbnails" => Some(SortingViewStyle::NoThumbnails),
+            "Thumbnails Above" => Some(SortingViewStyle::ThumbsAbove),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for SortingViewStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+}

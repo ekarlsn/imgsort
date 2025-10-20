@@ -258,6 +258,11 @@ mod tests {
         preload_back_num: 10,
         preload_front_num: 30,
         scale_down_size: (800, 100),
+        thumbnail_size: crate::sorting::Dim {
+            width: 100,
+            height: 100,
+        },
+        thumbnail_style: crate::SortingViewStyle::ThumbsAbove,
     };
 
     fn create_test_config() -> Config {
@@ -265,6 +270,11 @@ mod tests {
             preload_back_num: 10,
             preload_front_num: 30,
             scale_down_size: (800, 100),
+            thumbnail_size: crate::sorting::Dim {
+                width: 100,
+                height: 100,
+            },
+            thumbnail_style: crate::SortingViewStyle::ThumbsAbove,
         }
     }
 

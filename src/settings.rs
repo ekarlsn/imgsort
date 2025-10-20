@@ -1,8 +1,8 @@
-use iced::widget::{button, column, row, text, text_input};
+use iced::widget::{button, column, pick_list, row, text, text_input};
 use iced::Element;
 use std::collections::HashMap;
 
-use crate::{Config, Effect, Message};
+use crate::{Config, Effect, Message, SortingViewStyle};
 
 #[derive(Debug, Clone)]
 pub struct SettingsModel {
@@ -22,6 +22,7 @@ pub enum SettingsFieldName {
     ScaleDownSizeWidth,
     ScaleDownSizeHeight,
     Tag1Shortcut,
+    ViewStyle,
 }
 
 impl SettingsModel {
@@ -47,6 +48,13 @@ impl SettingsModel {
                 (
                     SettingsFieldName::Tag1Shortcut,
                     ("a".to_owned(), String::from("")),
+                ),
+                (
+                    SettingsFieldName::ViewStyle,
+                    (
+                        config.thumbnail_style.display_name().to_owned(),
+                        String::from(""),
+                    ),
                 ),
             ]),
         }
@@ -91,6 +99,12 @@ impl SettingsModel {
                     Ok(num) => config.scale_down_size.1 = num,
                     Err(_) => *error = "Invalid number".to_owned(),
                 }
+                let (view_style_text, view_style_error) =
+                    self.fields.get_mut(&SettingsFieldName::ViewStyle).unwrap();
+                match SortingViewStyle::from_display_name(view_style_text) {
+                    Some(style) => config.thumbnail_style = style,
+                    None => *view_style_error = "Invalid view style".to_owned(),
+                }
                 Effect::None
             }
         }
@@ -112,6 +126,8 @@ impl SettingsModel {
             .get(&SettingsFieldName::ScaleDownSizeHeight)
             .unwrap();
         let (tag1_text, tag1_error) = self.fields.get(&SettingsFieldName::Tag1Shortcut).unwrap();
+        let (view_style_text, view_style_error) =
+            self.fields.get(&SettingsFieldName::ViewStyle).unwrap();
 
         column![
             text("Settings"),
@@ -135,6 +151,18 @@ impl SettingsModel {
                     ))),
                 text(preload_front_error),
             ],
+            text("Shortcuts"),
+            row![
+                text("Tag 1"),
+                text_input("Tag 1", tag1_text)
+                    .id("tag_1_shortcut")
+                    .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
+                        SettingsFieldName::Tag1Shortcut,
+                        text
+                    ))),
+                text(tag1_error),
+            ],
+            text("Display Settings"),
             row![
                 text("Scale down size WxH"),
                 text_input("Width", scale_down_width_text)
@@ -152,16 +180,20 @@ impl SettingsModel {
                     ))),
                 text(scale_down_height_error),
             ],
-            text("Shortcuts"),
             row![
-                text("Tag 1"),
-                text_input("Tag 1", tag1_text)
-                    .id("tag_1_shortcut")
-                    .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
-                        SettingsFieldName::Tag1Shortcut,
-                        text
-                    ))),
-                text(tag1_error),
+                text("Sorting View Style"),
+                pick_list(
+                    SortingViewStyle::all_variants()
+                        .iter()
+                        .map(|s| s.display_name())
+                        .collect::<Vec<_>>(),
+                    Some(view_style_text.as_str()),
+                    |style| Message::Settings(SettingsMessage::UserUpdatedField(
+                        SettingsFieldName::ViewStyle,
+                        style.to_string()
+                    ))
+                ),
+                text(view_style_error)
             ],
             button("Save").on_press(Message::Settings(SettingsMessage::Save)),
         ]

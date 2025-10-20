@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use crate::image_widget::PixelCanvas;
 use crate::{
     Config, Effect, ImageData, ImageInfo, LoadedImageAndThumb, Message, PathList, PreloadImage,
+    SortingViewStyle,
 };
 
 // Constants
@@ -509,7 +510,7 @@ pub fn view_sorting_model<'a>(
         return widget::text("No images found").into();
     }
 
-    let main_image_view = view_image_with_thumbs(SortingViewStyle::ThumbsAbove, model, config);
+    let main_image_view = view_image_with_thumbs(config.thumbnail_style.clone(), model, config);
 
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
     debug!("Preload status: {}", preload_status_string);
