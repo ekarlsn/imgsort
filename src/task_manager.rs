@@ -17,6 +17,7 @@ impl TaskId {
 
 #[derive(Debug, Clone)]
 pub enum TaskType {
+    MoveThenLs,
     LsDir,
     PreloadImage,
 }
@@ -40,7 +41,20 @@ impl TaskManager {
         }
     }
 
-    /// Start a cancellable task (like LsDir or PreloadImage)
+    pub fn start_task_two<T, Msg>(
+        &mut self,
+        task_type: TaskType,
+        message: fn(TaskId, T) -> Msg,
+        future: impl std::future::Future<Output = T> + 'static + Send,
+    ) -> Task<Msg>
+    where
+        T: 'static + Send,
+        Msg: 'static + Send,
+    {
+        let (id, task) = self.start_task(task_type, future);
+        task.map(move |result| message(id, result))
+    }
+
     pub fn start_task<T>(
         &mut self,
         task_type: TaskType,
@@ -93,6 +107,7 @@ impl TaskManager {
             match info.task_type {
                 TaskType::LsDir => ls_dir_count += 1,
                 TaskType::PreloadImage => preload_count += 1,
+                TaskType::MoveThenLs => (),
             }
         }
 

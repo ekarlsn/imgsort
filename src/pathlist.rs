@@ -167,20 +167,8 @@ impl PathList {
             .and_then(|info| info.metadata.tag)
     }
 
-    pub fn prev(&self) -> Option<&ImageInfo> {
-        if self.index == 0 {
-            None
-        } else {
-            Some(&self.paths[self.index - 1])
-        }
-    }
-
     pub fn current(&self) -> &ImageInfo {
         &self.paths[self.index]
-    }
-
-    pub fn next(&self) -> Option<&ImageInfo> {
-        self.paths.get(self.index + 1)
     }
 
     pub fn current_mut(&mut self) -> &mut ImageInfo {

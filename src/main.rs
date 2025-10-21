@@ -172,7 +172,7 @@ pub enum Effect {
     None,
     LsDir,
     PreloadImages(Vec<String>, Dim),
-    MoveImagesWithTag(Tag),
+    MoveThenLs(Tag),
     FocusElement(widget::text_input::Id),
 }
 
@@ -208,8 +208,7 @@ impl Model {
 
     fn new_with_task() -> (Self, Task<Message>) {
         let (mut new_self, effect) = Self::new();
-        let config_clone = new_self.config.clone();
-        let task = effect_to_task(effect, &mut new_self, config_clone);
+        let task = effect_to_task(effect, &mut new_self);
         (new_self, task)
     }
 
@@ -289,13 +288,13 @@ impl Model {
     fn update_with_task(&mut self, message: Message) -> Task<Message> {
         let effect = self.update(message);
 
-        effect_to_task(effect, self, self.config.clone())
+        effect_to_task(effect, self)
     }
 
     fn update(&mut self, message: Message) -> Effect {
         debug!("Message: {message:?}");
         let effect = match message {
-            Message::UserPressedActionCopy(tag) => Effect::MoveImagesWithTag(tag),
+            Message::UserPressedActionCopy(tag) => Effect::MoveThenLs(tag),
             Message::UserSelectedTab(tab) => {
                 self.active_tab = tab;
                 self.selected_action_tag = None;
@@ -422,7 +421,7 @@ impl Model {
     }
 }
 
-fn effect_to_task(effect: Effect, model: &mut Model, _config: Config) -> Task<Message> {
+fn effect_to_task(effect: Effect, model: &mut Model) -> Task<Message> {
     match effect {
         Effect::None => Task::none(),
         Effect::LsDir => {
@@ -437,47 +436,51 @@ fn effect_to_task(effect: Effect, model: &mut Model, _config: Config) -> Task<Me
         Effect::PreloadImages(paths, dim) => {
             preload_images_task(paths, dim, model.config.clone(), &mut model.task_manager)
         }
-        Effect::MoveImagesWithTag(tag) => {
-            let (files_to_move, tag_name) = {
-                let mut files_to_move = Vec::new();
-                for info in &model.pathlist.paths {
+        Effect::MoveThenLs(tag) => {
+            let files_to_move = model
+                .pathlist
+                .paths
+                .iter()
+                .filter_map(|info| {
                     if info.metadata.tag == Some(tag) {
-                        files_to_move.push(info.path.clone());
+                        Some(info.path.clone())
+                    } else {
+                        None
                     }
-                }
-                let tag_name = model.tag_names.get(&tag);
-                (files_to_move, tag_name)
-            };
+                })
+                .collect::<Vec<_>>();
+            let tag_name = model.tag_names.get(&tag);
             if files_to_move.is_empty() {
                 println!("No files to move");
                 Task::none()
             } else {
                 println!("mv {} \"{}\"", files_to_move.join(" "), tag_name);
-                // TODO use task manager
-                // TODO I think LsDir should be a chained effect?
-                mv_files_task(files_to_move, tag_name.to_string()).then(|_| {
-                    // Create a new task for directory refresh after move
-                    let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
-                    let task_id = TaskId::new();
-                    Task::perform(future, move |res| match res {
-                        Ok(paths) => Message::ListDirCompleted(task_id, paths),
-                        Err(_) => panic!("Could not list directory after move"),
-                    })
-                })
+
+                model.task_manager.start_task_two(
+                    TaskType::MoveThenLs,
+                    Message::ListDirCompleted,
+                    mv_then_ls_async(files_to_move, tag_name.to_string()),
+                )
             }
         }
         Effect::FocusElement(id) => widget::text_input::focus(id),
     }
 }
 
-fn mv_files_task(files: Vec<String>, destination: String) -> Task<()> {
-    Task::future(mv_files_async(files, destination))
+fn mv_then_ls_task(files: Vec<String>, destination: String) -> Task<Vec<String>> {
+    Task::future(mv_then_ls_async(files, destination))
 }
 
-async fn mv_files_async(files: Vec<String>, destination: String) {
-    match tokio::task::spawn_blocking(move || mv_files(files, destination)).await {
-        Ok(_) => (),
-        Err(_) => panic!("Could not spawn task"),
+async fn mv_then_ls_async(files: Vec<String>, destination: String) -> Vec<String> {
+    match tokio::task::spawn_blocking(move || {
+        mv_files(files, destination);
+        get_files_in_folder(PICTURE_DIR)
+    })
+    .await
+    .expect("Could not spawn task")
+    {
+        Ok(files_in_folder) => files_in_folder,
+        Err(_) => panic!("Io Error when listing directory after move"),
     }
 }
 
@@ -535,24 +538,26 @@ fn preload_images_task(
     let mut tasks = Vec::new();
     for path in paths {
         let config2 = config.clone();
-        let dim2 = dim.clone();
-        let path_clone = path.clone();
 
-        // Create the future for preload operation
-        let future = tokio::task::spawn_blocking(move || preload_image(path_clone, dim2, config2));
+        let task = task_manager.start_task_two(
+            TaskType::PreloadImage,
+            |task_id, (a, b, c)| Message::ImagePreloaded(task_id, a, b, c),
+            preload_image_async(path, dim, config2),
+        );
 
-        // Start cancellable task using TaskManager
-        let (task_id, preload_task) = task_manager.start_task(TaskType::PreloadImage, future);
-
-        // Transform the task result to include task_id
-        let complete_task = preload_task.map(move |result| match result {
-            Ok((path4, image, thumb)) => Message::ImagePreloaded(task_id, path4, image, thumb),
-            Err(_) => panic!("Image preload failed"),
-        });
-
-        tasks.push(complete_task);
+        tasks.push(task);
     }
     Task::batch(tasks)
+}
+
+async fn preload_image_async(
+    path: String,
+    dim: Dim,
+    config: Config,
+) -> (String, ImageData, ImageData) {
+    tokio::task::spawn_blocking(move || preload_image(path, dim, config))
+        .await
+        .expect("Could not spawn task")
 }
 
 fn preload_image(path: String, dim: Dim, config: Config) -> (String, ImageData, ImageData) {

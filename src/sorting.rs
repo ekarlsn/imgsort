@@ -153,12 +153,6 @@ fn tag_and_move_on(model: &mut crate::Model, tag: Tag) -> Effect {
     user_pressed_next_image(model)
 }
 
-fn placeholder_text<'a>(msg: impl AsRef<str> + 'a, dim: &Dim) -> widget::Text<'a> {
-    widget::text(msg.as_ref().to_owned())
-        .width(dim.width as f32)
-        .height(dim.height as f32)
-}
-
 fn view_image<'a>(
     image: &'a ImageInfo,
     tag_names: &TagNames,
@@ -477,7 +471,7 @@ pub fn update_sorting_model(
         }
         SortingMessage::UserPressedMoveTag(tag) => {
             model.expanded_dropdown = None;
-            crate::Effect::MoveImagesWithTag(tag)
+            crate::Effect::MoveThenLs(tag)
         }
         SortingMessage::UserPressedTagMenu(maybe_tag) => {
             if model.expanded_dropdown.as_ref() == maybe_tag.as_ref() {
@@ -510,7 +504,7 @@ pub fn view_sorting_model<'a>(
         return widget::text("No images found").into();
     }
 
-    let main_image_view = view_image_with_thumbs(config.thumbnail_style.clone(), model, config);
+    let main_image_view = view_image_with_thumbs(config.thumbnail_style.clone(), model);
 
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
     debug!("Preload status: {}", preload_status_string);
@@ -574,7 +568,6 @@ fn is_typing_action(model: &crate::Model) -> bool {
 fn view_image_with_thumbs<'a>(
     sorting_view_style: SortingViewStyle,
     model: &'a crate::Model,
-    config: &'a Config,
 ) -> Element<'a, Message> {
     match sorting_view_style {
         SortingViewStyle::NoThumbnails => view_with_no_thumbnails(model),
