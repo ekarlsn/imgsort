@@ -79,7 +79,6 @@ struct Model {
     active_tab: TabId,
     selected_action_tag: Option<Tag>,
     task_manager: TaskManager,
-    // Flattened sorting model fields
     pathlist: PathList,
     expanded_dropdown: Option<Tag>,
     editing_tag_name: Option<(Tag, String, widget::text_input::Id)>,
@@ -426,12 +425,12 @@ fn effect_to_task(effect: Effect, model: &mut Model) -> Task<Message> {
         Effect::None => Task::none(),
         Effect::LsDir => {
             model.task_manager.cancel_all();
-            let future = get_files_in_folder_async(PICTURE_DIR.to_owned());
-            let (task_id, task) = model.task_manager.start_task(TaskType::LsDir, future);
-            task.map(move |res| match res {
-                Ok(paths) => Message::ListDirCompleted(task_id, paths),
-                Err(_) => panic!("Could not list directory"),
-            })
+
+            model.task_manager.start_task(
+                TaskType::LsDir,
+                Message::ListDirCompleted,
+                get_files_in_folder_async(PICTURE_DIR.to_owned()),
+            )
         }
         Effect::PreloadImages(paths, dim) => {
             preload_images_task(paths, dim, model.config.clone(), &mut model.task_manager)
@@ -456,7 +455,7 @@ fn effect_to_task(effect: Effect, model: &mut Model) -> Task<Message> {
             } else {
                 println!("mv {} \"{}\"", files_to_move.join(" "), tag_name);
 
-                model.task_manager.start_task_two(
+                model.task_manager.start_task(
                     TaskType::MoveThenLs,
                     Message::ListDirCompleted,
                     mv_then_ls_async(files_to_move, tag_name.to_string()),
@@ -465,10 +464,6 @@ fn effect_to_task(effect: Effect, model: &mut Model) -> Task<Message> {
         }
         Effect::FocusElement(id) => widget::text_input::focus(id),
     }
-}
-
-fn mv_then_ls_task(files: Vec<String>, destination: String) -> Task<Vec<String>> {
-    Task::future(mv_then_ls_async(files, destination))
 }
 
 async fn mv_then_ls_async(files: Vec<String>, destination: String) -> Vec<String> {
@@ -500,9 +495,10 @@ fn mv_files(files: Vec<String>, destination: String) {
     }
 }
 
-async fn get_files_in_folder_async(folder_path: String) -> std::io::Result<Vec<String>> {
+async fn get_files_in_folder_async(folder_path: String) -> Vec<String> {
     match tokio::task::spawn_blocking(move || get_files_in_folder(folder_path.as_str())).await {
-        Ok(res) => res,
+        Ok(Ok(res)) => res,
+        Ok(Err(_)) => panic!("Io Error when listing directory after move"),
         Err(_) => panic!("Could not spawn task"),
     }
 }
@@ -539,7 +535,7 @@ fn preload_images_task(
     for path in paths {
         let config2 = config.clone();
 
-        let task = task_manager.start_task_two(
+        let task = task_manager.start_task(
             TaskType::PreloadImage,
             |task_id, (a, b, c)| Message::ImagePreloaded(task_id, a, b, c),
             preload_image_async(path, dim, config2),

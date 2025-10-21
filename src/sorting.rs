@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use crate::image_widget::PixelCanvas;
 use crate::{
-    Config, Effect, ImageData, ImageInfo, LoadedImageAndThumb, Message, PathList, PreloadImage,
+    Effect, ImageData, ImageInfo, LoadedImageAndThumb, Message, PathList, PreloadImage,
     SortingViewStyle,
 };
 

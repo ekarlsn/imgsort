@@ -41,7 +41,7 @@ impl TaskManager {
         }
     }
 
-    pub fn start_task_two<T, Msg>(
+    pub fn start_task<T, Msg>(
         &mut self,
         task_type: TaskType,
         message: fn(TaskId, T) -> Msg,
@@ -51,19 +51,7 @@ impl TaskManager {
         T: 'static + Send,
         Msg: 'static + Send,
     {
-        let (id, task) = self.start_task(task_type, future);
-        task.map(move |result| message(id, result))
-    }
-
-    pub fn start_task<T>(
-        &mut self,
-        task_type: TaskType,
-        future: impl std::future::Future<Output = T> + 'static + Send,
-    ) -> (TaskId, Task<T>)
-    where
-        T: 'static + Send,
-    {
-        let task_id = TaskId::new();
+        let id = TaskId::new();
 
         // Create the main task
         let main_task = Task::perform(future, |result| result);
@@ -74,16 +62,16 @@ impl TaskManager {
 
         // Store the task info with abort handle
         self.active_tasks.insert(
-            task_id,
+            id,
             TaskInfo {
                 task_type: task_type.clone(),
                 abort_handle: abort_on_drop_handle,
             },
         );
 
-        debug!("Started task {:?}: {:?}", task_id, task_type);
+        debug!("Started task {:?}: {:?}", id, task_type);
 
-        (task_id, abortable_task)
+        abortable_task.map(move |result| message(id, result))
     }
 
     pub fn cancel_all(&mut self) {
