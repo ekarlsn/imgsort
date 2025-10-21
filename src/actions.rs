@@ -22,10 +22,10 @@ pub fn view_actions_tab(
                 .align_y(iced::Alignment::Center),
                 column![
                     button("Delete").width(200),
-                    button("Move").width(200),
-                    button("Copy")
+                    button("Move")
                         .width(200)
                         .on_press(Message::UserPressedActionCopy(tag.clone())),
+                    button("Copy").width(200),
                 ]
                 .spacing(10)
                 .padding(20),
