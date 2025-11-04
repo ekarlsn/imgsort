@@ -15,13 +15,6 @@ use crate::{
 // Constants
 pub const TAGGING_CHARS: &str = "aoeupy";
 
-// Tag constants
-pub const TAG1: Tag = Tag::Tag1;
-pub const TAG2: Tag = Tag::Tag2;
-pub const TAG3: Tag = Tag::Tag3;
-pub const TAG4: Tag = Tag::Tag4;
-pub const TAG5: Tag = Tag::Tag5;
-
 #[derive(Debug, Clone)]
 pub enum SortingMessage {
     UserPressedNextImage,
@@ -110,20 +103,20 @@ impl TagNames {
 
 pub fn tag_badge_color(tag: &Tag) -> iced::Color {
     match *tag {
-        TAG1 => TAG_COLORS.red,
-        TAG2 => TAG_COLORS.green,
-        TAG3 => TAG_COLORS.yellow,
-        TAG4 => TAG_COLORS.blue,
+        Tag::Tag1 => TAG_COLORS.red,
+        Tag::Tag2 => TAG_COLORS.green,
+        Tag::Tag3 => TAG_COLORS.yellow,
+        Tag::Tag4 => TAG_COLORS.blue,
         _ => TAG_COLORS.other,
     }
 }
 
 pub fn keybind_char_to_tag(c: &str) -> Option<Tag> {
     match c {
-        "a" => Some(TAG1),
-        "o" => Some(TAG2),
-        "e" => Some(TAG3),
-        "u" => Some(TAG4),
+        "a" => Some(Tag::Tag1),
+        "o" => Some(Tag::Tag2),
+        "e" => Some(Tag::Tag3),
+        "u" => Some(Tag::Tag4),
         _ => None,
     }
 }
@@ -285,46 +278,46 @@ fn view_tag_button_row<'a>(
     let green = names.tag2.as_str();
     let yellow = names.tag3.as_str();
     let blue = names.tag4.as_str();
-    let red_num = *nums.get(&TAG1).unwrap_or(&0);
-    let green_num = *nums.get(&TAG2).unwrap_or(&0);
-    let yellow_num = *nums.get(&TAG3).unwrap_or(&0);
-    let blue_num = *nums.get(&TAG4).unwrap_or(&0);
+    let red_num = *nums.get(&Tag::Tag1).unwrap_or(&0);
+    let green_num = *nums.get(&Tag::Tag2).unwrap_or(&0);
+    let yellow_num = *nums.get(&Tag::Tag3).unwrap_or(&0);
+    let blue_num = *nums.get(&Tag::Tag4).unwrap_or(&0);
     row![
         view_tag_button(
             red,
-            &TAG1,
+            &Tag::Tag1,
             red_num,
             Color::from_rgb(1.0, 0.0, 0.0),
             Color::from_rgb(1.0, 0.4, 0.4),
             Color::from_rgb(5.0, 0.0, 0.0),
-            expanded == Some(TAG1),
+            expanded == Some(Tag::Tag1),
         ),
         view_tag_button(
             green,
-            &TAG2,
+            &Tag::Tag2,
             green_num,
             Color::from_rgb(0.0, 0.6, 0.0),
             Color::from_rgb(0.2, 6.0, 0.2),
             Color::from_rgb(0.0, 0.3, 0.0),
-            expanded == Some(TAG2),
+            expanded == Some(Tag::Tag2),
         ),
         view_tag_button(
             yellow,
-            &TAG3,
+            &Tag::Tag3,
             yellow_num,
             Color::from_rgb(0.8, 0.8, 0.0),
             Color::from_rgb(0.8, 0.8, 0.6),
             Color::from_rgb(0.3, 0.3, 0.0),
-            expanded == Some(TAG3),
+            expanded == Some(Tag::Tag3),
         ),
         view_tag_button(
             blue,
-            &TAG4,
+            &Tag::Tag4,
             blue_num,
             Color::from_rgb(0.0, 0.0, 1.0),
             Color::from_rgb(0.4, 0.4, 1.0),
             Color::from_rgb(0.0, 0.0, 0.5),
-            expanded == Some(TAG4),
+            expanded == Some(Tag::Tag4),
         ),
     ]
     .into()
@@ -434,7 +427,7 @@ pub fn update_sorting_model(
                     tag_and_move_on(model, tag)
                 }
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) => {
-                    tag_and_move_on(model, TAG5)
+                    tag_and_move_on(model, Tag::Tag5)
                 }
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace) => {
                     if !model.pathlist.paths.is_empty() {
