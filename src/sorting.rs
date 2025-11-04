@@ -67,7 +67,10 @@ struct TagColors {
     green: Color,
     yellow: Color,
     blue: Color,
-    other: Color,
+    purple: Color,
+    orange: Color,
+    gray: Color,
+    cyan: Color,
 }
 
 const TAG_COLORS: TagColors = TagColors {
@@ -75,7 +78,10 @@ const TAG_COLORS: TagColors = TagColors {
     green: Color::from_rgb(0.0, 0.6, 0.0),
     yellow: Color::from_rgb(0.8, 0.8, 0.0),
     blue: Color::from_rgb(0.0, 0.0, 1.0),
-    other: Color::from_rgb(0.5, 0.5, 0.5),
+    purple: Color::from_rgb(0.5, 0.0, 0.5),
+    orange: Color::from_rgb(1.0, 0.5, 0.0),
+    gray: Color::from_rgb(0.5, 0.5, 0.5),
+    cyan: Color::from_rgb(0.0, 1.0, 1.0),
 };
 
 impl TagNames {
@@ -125,7 +131,10 @@ pub fn tag_badge_color(tag: &Tag) -> iced::Color {
         Tag::Tag2 => TAG_COLORS.green,
         Tag::Tag3 => TAG_COLORS.yellow,
         Tag::Tag4 => TAG_COLORS.blue,
-        _ => TAG_COLORS.other,
+        Tag::Tag5 => TAG_COLORS.purple,
+        Tag::Tag6 => TAG_COLORS.orange,
+        Tag::Tag7 => TAG_COLORS.gray,
+        Tag::Tag8 => TAG_COLORS.cyan,
     }
 }
 
@@ -350,7 +359,7 @@ fn view_tag_button<'a>(
         })
         .on_press(Message::Sorting(SortingMessage::UserPressedTagButton(*tag)))
         .width(Length::Fill)
-        .height(55);
+        .height(33);
 
     let more_button = widget::button("...")
         .style(move |_, status| match &status {
