@@ -24,7 +24,7 @@ Run it in the folder you want to sort images
 - [x] Size detection
 - [x] Load thumbnails in parallell
 - [x] Tag buttons scale
-- [ ] 8 Tags, no special delete
+- [x] 8 Tags, no special delete
 - [ ] Initial load bug
 - [ ] Tag buttons remove dropdown, just rename
 - [ ] Fix crash on delete tag

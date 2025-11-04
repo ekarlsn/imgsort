@@ -350,6 +350,7 @@ fn view_tag_button<'a>(
 
     let style_pressed = style.with_background(iced::Background::Color(press_bg));
 
+    let button_height = 33;
     let tag_button = widget::Button::new(widget::text!("{text} ({num})"))
         .style(move |_, status| match &status {
             widget::button::Status::Active => style,
@@ -359,7 +360,7 @@ fn view_tag_button<'a>(
         })
         .on_press(Message::Sorting(SortingMessage::UserPressedTagButton(*tag)))
         .width(Length::Fill)
-        .height(33);
+        .height(button_height);
 
     let more_button = widget::button("...")
         .style(move |_, status| match &status {
@@ -372,7 +373,7 @@ fn view_tag_button<'a>(
             *tag,
         ))))
         .width(45)
-        .height(55);
+        .height(button_height);
 
     let drop_down_menu = column![
         tag_dropdown_button(
@@ -435,7 +436,7 @@ pub fn update_sorting_model(
                     tag_and_move_on(model, tag)
                 }
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Delete) => {
-                    tag_and_move_on(model, Tag::Tag5)
+                    tag_and_move_on(model, Tag::Tag7)
                 }
                 iced::keyboard::Key::Named(iced::keyboard::key::Named::Backspace) => {
                     if !model.pathlist.paths.is_empty() {
