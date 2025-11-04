@@ -149,6 +149,7 @@ pub enum Message {
     ListDirCompleted(TaskId, Vec<String>),
     ImagePreloaded(TaskId, String, ImageData, ImageData),
     KeyboardEventOccurred(iced::keyboard::Event),
+    MousePressed,
     Settings(SettingsMessage),
     Sorting(SortingMessage),
     PixelCanvas(PixelCanvasMessage),
@@ -213,16 +214,17 @@ impl Model {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        event::listen_with(Self::subscription_keyboard_filter).map(Message::KeyboardEventOccurred)
+        event::listen_with(Self::subscription_filter)
     }
 
-    fn subscription_keyboard_filter(
+    fn subscription_filter(
         event: Event,
         _status: event::Status,
         _id: iced::window::Id,
-    ) -> Option<iced::keyboard::Event> {
+    ) -> Option<Message> {
         match event {
-            Event::Keyboard(keyboard_event) => Some(keyboard_event),
+            Event::Keyboard(keyboard_event) => Some(Message::KeyboardEventOccurred(keyboard_event)),
+            Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => Some(Message::MousePressed),
             _ => None,
         }
     }
@@ -306,6 +308,10 @@ impl Model {
             }
             Message::UserPressedActionBack => {
                 self.selected_action_tag = None;
+                Effect::None
+            }
+            Message::MousePressed => {
+                self.editing_tag_name = None;
                 Effect::None
             }
             Message::UserPressedSelectFolder => Effect::None,
