@@ -341,7 +341,7 @@ fn view_tag_button<'a>(
 
     let style_pressed = style.with_background(iced::Background::Color(press_bg));
 
-    let tag_button = widget::Button::new(widget::text!("{text} ({num})\n[a]"))
+    let tag_button = widget::Button::new(widget::text!("{text} ({num})"))
         .style(move |_, status| match &status {
             widget::button::Status::Active => style,
             widget::button::Status::Hovered => style_hovered,
