@@ -25,11 +25,11 @@ Run it in the folder you want to sort images
 - [x] Load thumbnails in parallell
 - [x] Tag buttons scale
 - [x] 8 Tags, no special delete
-- [ ] Initial load bug
 - [ ] Tag buttons remove dropdown, just rename
-- [ ] Fix crash on delete tag
 - [ ] Internationalize
 - [ ] Navigate folders
+- [ ] Initial load bug
+- [ ] Fix crash on delete tag
 - [ ] Obvious UI
     - Tooltips
     - Labels
@@ -37,7 +37,8 @@ Run it in the folder you want to sort images
 - [ ] Save settings persistently
 - [ ] Config for thumbnails, size, above/below/side, amount
 - [ ] Config for shortcuts
-- [ ] Thumbnails adjust to screen size
+- [ ] More thumbnail views
+- [ ] Second window with other view, for dual screen
 - [ ] Don't create log file by default
 - [ ] Less yank after moving images
 - [ ] Failure handling when images can't be moved
