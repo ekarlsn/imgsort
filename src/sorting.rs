@@ -357,7 +357,7 @@ fn view_tag_button<'a>(
             widget::button::Status::Disabled => style,
         })
         .on_press(Message::Sorting(SortingMessage::UserPressedTagButton(*tag)))
-        .width(350)
+        .width(Length::Fill)
         .height(55);
 
     let more_button = widget::button("...")
