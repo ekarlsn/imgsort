@@ -1,3 +1,4 @@
+use crate::ui::{self, ButtonStyle};
 use iced::widget::{self, button, canvas, center, column, row, stack};
 use iced::{Color, Element, Length};
 use iced_aw::{drop_down, DropDown};
@@ -38,6 +39,9 @@ pub enum Tag {
     Tag3,
     Tag4,
     Tag5,
+    Tag6,
+    Tag7,
+    Tag8,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +50,10 @@ pub struct TagNames {
     pub tag2: String,
     pub tag3: String,
     pub tag4: String,
+    pub tag5: String,
+    pub tag6: String,
+    pub tag7: String,
+    pub tag8: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,6 +85,10 @@ impl TagNames {
             tag2: String::from("Green"),
             tag3: String::from("Yellow"),
             tag4: String::from("Blue"),
+            tag5: String::from("Purple"),
+            tag6: String::from("Orange"),
+            tag7: String::from("Gray"),
+            tag8: String::from("Cyan"),
         }
     }
 
@@ -86,7 +98,10 @@ impl TagNames {
             Tag::Tag2 => self.tag2 = name,
             Tag::Tag3 => self.tag3 = name,
             Tag::Tag4 => self.tag4 = name,
-            Tag::Tag5 => (),
+            Tag::Tag5 => self.tag5 = name,
+            Tag::Tag6 => self.tag6 = name,
+            Tag::Tag7 => self.tag7 = name,
+            Tag::Tag8 => self.tag8 = name,
         }
     }
 
@@ -96,7 +111,10 @@ impl TagNames {
             Tag::Tag2 => &self.tag2,
             Tag::Tag3 => &self.tag3,
             Tag::Tag4 => &self.tag4,
-            Tag::Tag5 => "",
+            Tag::Tag5 => &self.tag5,
+            Tag::Tag6 => &self.tag6,
+            Tag::Tag7 => &self.tag7,
+            Tag::Tag8 => &self.tag8,
         }
     }
 }
@@ -274,57 +292,38 @@ fn view_tag_button_row<'a>(
     names: &'a TagNames,
     nums: &HashMap<Tag, u32>,
 ) -> Element<'a, Message> {
-    let red = names.tag1.as_str();
-    let green = names.tag2.as_str();
-    let yellow = names.tag3.as_str();
-    let blue = names.tag4.as_str();
-    let red_num = *nums.get(&Tag::Tag1).unwrap_or(&0);
-    let green_num = *nums.get(&Tag::Tag2).unwrap_or(&0);
-    let yellow_num = *nums.get(&Tag::Tag3).unwrap_or(&0);
-    let blue_num = *nums.get(&Tag::Tag4).unwrap_or(&0);
-    row![
+    let tag_button_helper = |name: String, tag: &Tag, button_style: ButtonStyle| {
+        let num = *nums.get(tag).unwrap_or(&0);
         view_tag_button(
-            red,
-            &Tag::Tag1,
-            red_num,
-            Color::from_rgb(1.0, 0.0, 0.0),
-            Color::from_rgb(1.0, 0.4, 0.4),
-            Color::from_rgb(5.0, 0.0, 0.0),
-            expanded == Some(Tag::Tag1),
-        ),
-        view_tag_button(
-            green,
-            &Tag::Tag2,
-            green_num,
-            Color::from_rgb(0.0, 0.6, 0.0),
-            Color::from_rgb(0.2, 6.0, 0.2),
-            Color::from_rgb(0.0, 0.3, 0.0),
-            expanded == Some(Tag::Tag2),
-        ),
-        view_tag_button(
-            yellow,
-            &Tag::Tag3,
-            yellow_num,
-            Color::from_rgb(0.8, 0.8, 0.0),
-            Color::from_rgb(0.8, 0.8, 0.6),
-            Color::from_rgb(0.3, 0.3, 0.0),
-            expanded == Some(Tag::Tag3),
-        ),
-        view_tag_button(
-            blue,
-            &Tag::Tag4,
-            blue_num,
-            Color::from_rgb(0.0, 0.0, 1.0),
-            Color::from_rgb(0.4, 0.4, 1.0),
-            Color::from_rgb(0.0, 0.0, 0.5),
-            expanded == Some(Tag::Tag4),
-        ),
+            name,
+            tag,
+            num,
+            button_style.basic,
+            button_style.hover,
+            button_style.press,
+            expanded == Some(*tag),
+        )
+    };
+
+    column![
+        row![
+            tag_button_helper(names.tag1.clone(), &Tag::Tag1, ui::RED_BUTTON_STYLE),
+            tag_button_helper(names.tag2.clone(), &Tag::Tag2, ui::GREEN_BUTTON_STYLE),
+            tag_button_helper(names.tag3.clone(), &Tag::Tag3, ui::YELLOW_BUTTON_STYLE),
+            tag_button_helper(names.tag4.clone(), &Tag::Tag4, ui::BLUE_BUTTON_STYLE),
+        ],
+        row![
+            tag_button_helper(names.tag5.clone(), &Tag::Tag5, ui::PURPLE_BUTTON_STYLE),
+            tag_button_helper(names.tag6.clone(), &Tag::Tag6, ui::ORANGE_BUTTON_STYLE),
+            tag_button_helper(names.tag7.clone(), &Tag::Tag7, ui::GRAY_BUTTON_STYLE),
+            tag_button_helper(names.tag8.clone(), &Tag::Tag8, ui::CYAN_BUTTON_STYLE),
+        ]
     ]
     .into()
 }
 
 fn view_tag_button<'a>(
-    text: &'a str,
+    text: String,
     tag: &Tag,
     num: u32,
     basic_bg: Color,

@@ -15,6 +15,7 @@ mod pathlist;
 mod settings;
 mod sorting;
 mod task_manager;
+mod ui;
 
 use image_widget::PixelCanvasMessage;
 use pathlist::PathList;
@@ -613,9 +614,4 @@ impl std::fmt::Display for SortingViewStyle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.display_name())
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
 }
