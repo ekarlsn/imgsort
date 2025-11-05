@@ -25,7 +25,7 @@ Run it in the folder you want to sort images
 - [x] Load thumbnails in parallell
 - [x] Tag buttons scale
 - [x] 8 Tags, no special delete
-- [ ] Tag buttons remove dropdown, just rename
+- [x] Tag buttons remove dropdown, just rename
 - [ ] Internationalize
 - [ ] Navigate folders
 - [ ] Initial load bug

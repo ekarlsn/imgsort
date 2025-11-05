@@ -247,25 +247,6 @@ fn view_loaded_image(
     stack![image_with_border].push_maybe(badge).into()
 }
 
-fn view_rename_tag_modal(text: &str, id: widget::text_input::Id) -> Element<Message> {
-    let input = widget::text_input("tag name", text)
-        .on_input(|text| Message::Sorting(SortingMessage::UserEditTagName(text)))
-        .on_submit(Message::Sorting(SortingMessage::UserPressedSubmitRenameTag))
-        .id(id.clone());
-
-    let submit =
-        button("Submit").on_press(Message::Sorting(SortingMessage::UserPressedSubmitRenameTag));
-
-    let cancel =
-        button("Cancel").on_press(Message::Sorting(SortingMessage::UserPressedCancelRenameTag));
-
-    column![input, row![submit, cancel,]]
-        .spacing(20)
-        .spacing(10)
-        .padding(50)
-        .into()
-}
-
 fn preload_list_status_string_pathlist(
     pathlist: &PathList,
     task_manager: &crate::task_manager::TaskManager,
@@ -297,6 +278,7 @@ fn preload_list_status_string_pathlist(
 }
 
 fn view_tag_button_row<'a>(
+    editing_tag_name: Option<&(Tag, String, iced::widget::text_input::Id)>,
     expanded: Option<Tag>,
     names: &'a TagNames,
     nums: &HashMap<Tag, u32>,
@@ -311,6 +293,10 @@ fn view_tag_button_row<'a>(
             button_style.hover,
             button_style.press,
             expanded == Some(*tag),
+            match editing_tag_name {
+                Some((t, name, id)) if *t == *tag => Some((name.clone(), id.clone())),
+                _ => None,
+            },
         )
     };
 
@@ -339,6 +325,7 @@ fn view_tag_button<'a>(
     hover_bg: Color,
     press_bg: Color,
     expanded: bool,
+    editing_tag_name: Option<(String, widget::text_input::Id)>,
 ) -> Element<'a, Message> {
     let style = iced::widget::button::Style {
         background: Some(iced::Background::Color(basic_bg)),
@@ -369,9 +356,7 @@ fn view_tag_button<'a>(
             widget::button::Status::Pressed => style_pressed,
             widget::button::Status::Disabled => style,
         })
-        .on_press(Message::Sorting(SortingMessage::UserPressedTagMenu(Some(
-            *tag,
-        ))))
+        .on_press(Message::Sorting(SortingMessage::UserPressedRenameTag(*tag)))
         .width(45)
         .height(button_height);
 
@@ -388,7 +373,18 @@ fn view_tag_button<'a>(
         .on_dismiss(Message::Sorting(SortingMessage::UserPressedTagMenu(None)))
         .width(Length::Fill);
 
-    row![tag_button, drop_down_button].into()
+    let rename_input: Option<Element<Message>> = editing_tag_name.map(|(text, id)| {
+        widget::text_input("tag name", &text)
+            .on_input(|text| Message::Sorting(SortingMessage::UserEditTagName(text)))
+            .on_submit(Message::Sorting(SortingMessage::UserPressedSubmitRenameTag))
+            .id(id.clone())
+            .into()
+    });
+
+    match rename_input {
+        Some(widget) => widget,
+        None => row![tag_button, drop_down_button].into(),
+    }
 }
 
 fn tag_dropdown_button(text: &str, message: SortingMessage) -> Element<Message> {
@@ -404,6 +400,7 @@ pub fn update_sorting_model(
     message: SortingMessage,
     config: &crate::Config,
 ) -> crate::Effect {
+    log::info!("Keyboard event, in sorting model");
     match message {
         SortingMessage::UserPressedPreviousImage => user_pressed_previous_image(model),
         SortingMessage::UserPressedNextImage => user_pressed_next_image(model),
@@ -416,6 +413,13 @@ pub fn update_sorting_model(
             } else {
                 crate::Effect::None
             }
+        }
+        SortingMessage::KeyboardEvent(iced::keyboard::Event::KeyPressed { key, .. })
+            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) =>
+        {
+            log::info!("Pressed escape, clearing edit tag name");
+            model.editing_tag_name = None;
+            Effect::None
         }
         SortingMessage::KeyboardEvent(_) if is_typing_action(model) => crate::Effect::None,
         SortingMessage::KeyboardEvent(event) => match event {
@@ -527,7 +531,12 @@ pub fn view_sorting_model<'a>(
         path = model.pathlist.current().path,
     ));
 
-    let tag_buttons = view_tag_button_row(model.expanded_dropdown, &model.tag_names, &tag_count);
+    let tag_buttons = view_tag_button_row(
+        model.editing_tag_name.as_ref(),
+        model.expanded_dropdown,
+        &model.tag_names,
+        &tag_count,
+    );
 
     let action_buttons = row![
         widget::button(widget::text!("{}", t!("<- Previous")))
@@ -553,14 +562,7 @@ pub fn view_sorting_model<'a>(
         widget::text(preload_status_string),
     ];
 
-    let content = center(content);
-
-    let popup = model
-        .editing_tag_name
-        .as_ref()
-        .map(|(_, text, id)| view_rename_tag_modal(text.as_str(), id.clone()));
-
-    stack![content].push_maybe(popup).into()
+    center(content).into()
 }
 
 fn is_typing_action(model: &crate::Model) -> bool {
