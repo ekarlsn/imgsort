@@ -1,5 +1,5 @@
 use crate::ui::{self, ButtonStyle};
-use iced::widget::{self, button, canvas, center, column, row, stack};
+use iced::widget::{self, canvas, center, column, row, stack};
 use iced::{Color, Element, Length};
 use log::debug;
 use rust_i18n::t;
