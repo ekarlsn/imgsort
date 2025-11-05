@@ -115,11 +115,7 @@ impl PathList {
     }
 
     fn preload_next_left(&mut self, config: &Config) -> Option<String> {
-        let min_preload_index = if self.index > config.preload_back_num {
-            self.index - config.preload_back_num
-        } else {
-            0
-        };
+        let min_preload_index = self.index.saturating_sub(config.preload_back_num);
         debug!("Preloading next left image, up to {min_preload_index}");
         for i in (min_preload_index..self.index).rev() {
             let e = &mut self.paths[i];

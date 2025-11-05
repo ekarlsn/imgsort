@@ -151,16 +151,16 @@ pub fn keybind_char_to_tag(c: &str) -> Option<Tag> {
 fn user_pressed_previous_image(model: &mut crate::Model) -> Effect {
     let preload_path = model.pathlist.step_left(&model.config);
     match preload_path {
-        Some(path) => return Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap()),
-        None => return Effect::None,
+        Some(path) => Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap()),
+        None => Effect::None,
     }
 }
 
 fn user_pressed_next_image(model: &mut crate::Model) -> Effect {
     let preload_path = model.pathlist.step_right(&model.config);
     match preload_path {
-        Some(path) => return Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap()),
-        None => return Effect::None,
+        Some(path) => Effect::PreloadImages(vec![path], model.canvas_dimensions.unwrap()),
+        None => Effect::None,
     }
 }
 
@@ -513,7 +513,7 @@ pub fn view_sorting_model<'a>(
     let main_image_view = view_image_with_thumbs(config.thumbnail_style.clone(), model);
 
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
-    debug!("Preload status: {}", preload_status_string);
+    debug!("Preload status: {preload_status_string}");
 
     let mut tag_count = std::collections::HashMap::new();
 
@@ -588,7 +588,7 @@ fn view_with_no_thumbnails(model: &crate::Model) -> Element<Message> {
         true,
     );
 
-    image.into()
+    image
 }
 
 fn view_with_thumbnails_on_top(model: &crate::Model) -> Element<Message> {
@@ -603,11 +603,7 @@ fn view_with_thumbnails_on_top(model: &crate::Model) -> Element<Message> {
     // Three on each side
     let num_thumbs = 3;
     let mut thumbs = Vec::new();
-    let from = if model.pathlist.index > num_thumbs {
-        model.pathlist.index - num_thumbs
-    } else {
-        0
-    };
+    let from = model.pathlist.index.saturating_sub(num_thumbs);
     let to = min(
         model.pathlist.index + num_thumbs,
         model.pathlist.paths.len() - 1,

@@ -9,6 +9,12 @@ static TASK_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaskId(u64);
 
+impl Default for TaskId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TaskId {
     pub fn new() -> Self {
         TaskId(TASK_ID_COUNTER.fetch_add(1, Ordering::Relaxed))
@@ -69,7 +75,7 @@ impl TaskManager {
             },
         );
 
-        debug!("Started task {:?}: {:?}", id, task_type);
+        debug!("Started task {id:?}: {task_type:?}");
 
         abortable_task.map(move |result| message(id, result))
     }
@@ -107,9 +113,9 @@ impl TaskManager {
         let (ls_dir_count, preload_count) = self.get_task_counts();
 
         match (ls_dir_count > 0, preload_count > 0) {
-            (true, true) => format!("Loading directory, {} images preloading...", preload_count),
+            (true, true) => format!("Loading directory, {preload_count} images preloading..."),
             (true, false) => "Loading directory...".to_string(),
-            (false, true) => format!("Loading {} images...", preload_count),
+            (false, true) => format!("Loading {preload_count} images..."),
             (false, false) => "".to_string(), // No loading text when no tasks
         }
     }

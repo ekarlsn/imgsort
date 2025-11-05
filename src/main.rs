@@ -322,7 +322,7 @@ impl Model {
                     return Effect::None;
                 };
                 self.task_manager.cancel_all();
-                debug!("Directory listing completed for task {:?}", task_id);
+                debug!("Directory listing completed for task {task_id:?}");
                 if paths.is_empty() {
                     self.state = ModelState::EmptyDirectory;
                     Effect::None
@@ -332,7 +332,7 @@ impl Model {
             }
             Message::ImagePreloaded(task_id, path, image, thumb) => {
                 self.task_manager.report_completed_task(task_id);
-                debug!("Image preload completed for task {:?}", task_id);
+                debug!("Image preload completed for task {task_id:?}");
                 match self.state {
                     ModelState::Sorting => {
                         self.update_sorting(SortingMessage::ImagePreloaded(path, image, thumb))
@@ -578,12 +578,12 @@ fn get_resized_image(path: &str, dim: Dim) -> ImageData {
         .to_rgba8();
     let width = image.width();
     let height = image.height();
-    let image = ImageData {
+    
+    ImageData {
         data: image.to_vec(),
         width,
         height,
-    };
-    image
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
