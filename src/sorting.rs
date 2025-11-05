@@ -368,11 +368,6 @@ fn view_tag_button<'a>(
         tag_dropdown_button("Move", SortingMessage::UserPressedMoveTag(tag.to_owned())),
     ];
 
-    let drop_down_button = DropDown::new(more_button, drop_down_menu, expanded)
-        .alignment(drop_down::Alignment::Top)
-        .on_dismiss(Message::Sorting(SortingMessage::UserPressedTagMenu(None)))
-        .width(Length::Fill);
-
     let rename_input: Option<Element<Message>> = editing_tag_name.map(|(text, id)| {
         widget::text_input("tag name", &text)
             .on_input(|text| Message::Sorting(SortingMessage::UserEditTagName(text)))
@@ -383,7 +378,7 @@ fn view_tag_button<'a>(
 
     match rename_input {
         Some(widget) => widget,
-        None => row![tag_button, drop_down_button].into(),
+        None => row![tag_button, more_button].into(),
     }
 }
 
