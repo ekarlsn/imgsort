@@ -81,7 +81,6 @@ struct Model {
     selected_action_tag: Option<Tag>,
     task_manager: TaskManager,
     pathlist: PathList,
-    expanded_dropdown: Option<Tag>,
     editing_tag_name: Option<(Tag, String, widget::text_input::Id)>,
     tag_names: TagNames,
     canvas_dimensions: Option<Dim>,
@@ -198,7 +197,6 @@ impl Model {
                 selected_action_tag: None,
                 task_manager: TaskManager::new(),
                 pathlist: PathList::new(vec![]),
-                expanded_dropdown: None,
                 editing_tag_name: None,
                 tag_names: TagNames::new(),
                 canvas_dimensions: None,
@@ -268,7 +266,6 @@ impl Model {
 
                 self.state = ModelState::Sorting;
                 self.pathlist = PathList::new(paths.clone());
-                self.expanded_dropdown = None;
                 self.editing_tag_name = None;
                 self.tag_names = TagNames::new();
                 self.canvas_dimensions = None;
@@ -578,7 +575,7 @@ fn get_resized_image(path: &str, dim: Dim) -> ImageData {
         .to_rgba8();
     let width = image.width();
     let height = image.height();
-    
+
     ImageData {
         data: image.to_vec(),
         width,

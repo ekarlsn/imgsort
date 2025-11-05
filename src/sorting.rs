@@ -25,7 +25,6 @@ pub enum SortingMessage {
     UserPressedSubmitRenameTag,
     UserPressedCancelRenameTag,
     UserEditTagName(String),
-    UserPressedTagMenu(Option<Tag>),
     ImagePreloaded(String, ImageData, ImageData),
     KeyboardEvent(iced::keyboard::Event),
     CanvasResized(Dim),
@@ -278,7 +277,6 @@ fn preload_list_status_string_pathlist(
 
 fn view_tag_button_row<'a>(
     editing_tag_name: Option<&(Tag, String, iced::widget::text_input::Id)>,
-    expanded: Option<Tag>,
     names: &'a TagNames,
     nums: &HashMap<Tag, u32>,
 ) -> Element<'a, Message> {
@@ -291,7 +289,6 @@ fn view_tag_button_row<'a>(
             button_style.basic,
             button_style.hover,
             button_style.press,
-            expanded == Some(*tag),
             match editing_tag_name {
                 Some((t, name, id)) if *t == *tag => Some((name.clone(), id.clone())),
                 _ => None,
@@ -323,7 +320,6 @@ fn view_tag_button<'a>(
     basic_bg: Color,
     hover_bg: Color,
     press_bg: Color,
-    expanded: bool,
     editing_tag_name: Option<(String, widget::text_input::Id)>,
 ) -> Element<'a, Message> {
     let style = iced::widget::button::Style {
@@ -359,14 +355,6 @@ fn view_tag_button<'a>(
         .width(45)
         .height(button_height);
 
-    let drop_down_menu = column![
-        tag_dropdown_button(
-            "Rename",
-            SortingMessage::UserPressedRenameTag(tag.to_owned())
-        ),
-        tag_dropdown_button("Move", SortingMessage::UserPressedMoveTag(tag.to_owned())),
-    ];
-
     let rename_input: Option<Element<Message>> = editing_tag_name.map(|(text, id)| {
         widget::text_input("tag name", &text)
             .on_input(|text| Message::Sorting(SortingMessage::UserEditTagName(text)))
@@ -379,13 +367,6 @@ fn view_tag_button<'a>(
         Some(widget) => widget,
         None => row![tag_button, more_button].into(),
     }
-}
-
-fn tag_dropdown_button(text: &str, message: SortingMessage) -> Element<Message> {
-    button(text)
-        .on_press(Message::Sorting(message))
-        .width(250)
-        .into()
 }
 
 // Public functions for flattened sorting model
@@ -454,7 +435,6 @@ pub fn update_sorting_model(
         SortingMessage::UserPressedRenameTag(tag) => {
             let id = widget::text_input::Id::unique();
             model.editing_tag_name = Some((tag, "".to_owned(), id.clone()));
-            model.expanded_dropdown = None;
             crate::Effect::FocusElement(id)
         }
         SortingMessage::UserPressedSubmitRenameTag => {
@@ -470,18 +450,7 @@ pub fn update_sorting_model(
             model.editing_tag_name.as_mut().unwrap().1 = text;
             crate::Effect::None
         }
-        SortingMessage::UserPressedMoveTag(tag) => {
-            model.expanded_dropdown = None;
-            crate::Effect::MoveThenLs(tag)
-        }
-        SortingMessage::UserPressedTagMenu(maybe_tag) => {
-            if model.expanded_dropdown.as_ref() == maybe_tag.as_ref() {
-                model.expanded_dropdown = None;
-            } else {
-                model.expanded_dropdown = maybe_tag;
-            }
-            crate::Effect::None
-        }
+        SortingMessage::UserPressedMoveTag(tag) => crate::Effect::MoveThenLs(tag),
         SortingMessage::CanvasResized(dim) => {
             println!("Canvas resized to: {}x{}", dim.width, dim.height);
             if model.canvas_dimensions.as_ref() != Some(&dim) {
@@ -528,7 +497,6 @@ pub fn view_sorting_model<'a>(
 
     let tag_buttons = view_tag_button_row(
         model.editing_tag_name.as_ref(),
-        model.expanded_dropdown,
         &model.tag_names,
         &tag_count,
     );
