@@ -45,3 +45,4 @@ rust-i18n = "3.1.5"
 [package.metadata.i18n]
 available-locales = ["en", "se"]
 default-locale = "en"
+load-path = "locales"

@@ -20,6 +20,7 @@ mod ui;
 use image_widget::PixelCanvasMessage;
 use pathlist::PathList;
 
+use rust_i18n::t;
 use settings::{SettingsMessage, SettingsModel};
 use sorting::{SortingMessage, Tag, TagNames};
 use task_manager::{TaskId, TaskManager, TaskType};
@@ -387,17 +388,17 @@ impl Model {
         Tabs::new(Message::UserSelectedTab)
             .push(
                 TabId::Main,
-                iced_aw::TabLabel::Text(String::from("Main")),
+                iced_aw::TabLabel::Text(String::from(t!("Main"))),
                 main_content,
             )
             .push(
                 TabId::Actions,
-                iced_aw::TabLabel::Text(String::from("Actions")),
+                iced_aw::TabLabel::Text(String::from(t!("Actions"))),
                 actions_content,
             )
             .push(
                 TabId::Settings,
-                iced_aw::TabLabel::Text(String::from("Settings")),
+                iced_aw::TabLabel::Text(String::from(t!("Settings"))),
                 settings_content,
             )
             .set_active_tab(&self.active_tab)
@@ -406,8 +407,9 @@ impl Model {
 
     fn view_empty_dir_model(&self) -> Element<'static, Message> {
         column![
-            widget::text("No pictures in this directory, select another one"),
-            widget::button("Select Folder").on_press(Message::UserPressedSelectFolder),
+            widget::text(t!("No pictures in this directory, select another one")),
+            widget::button(widget::text(t!("Select Folder")))
+                .on_press(Message::UserPressedSelectFolder),
         ]
         .into()
     }
@@ -605,6 +607,7 @@ impl SortingViewStyle {
     }
 
     pub fn from_display_name(name: &str) -> Option<SortingViewStyle> {
+        // TODO: i18n
         match name {
             "No Thumbnails" => Some(SortingViewStyle::NoThumbnails),
             "Thumbnails Above" => Some(SortingViewStyle::ThumbsAbove),

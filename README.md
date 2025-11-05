@@ -27,6 +27,7 @@ Run it in the folder you want to sort images
 - [x] 8 Tags, no special delete
 - [x] Tag buttons remove dropdown, just rename
 - [ ] Internationalize
+- [ ] BUG: Pictures not loading in debug mode
 - [ ] Navigate folders
 - [ ] Initial load bug
 - [ ] Fix crash on delete tag

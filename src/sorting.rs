@@ -85,14 +85,14 @@ const TAG_COLORS: TagColors = TagColors {
 impl TagNames {
     pub fn new() -> Self {
         Self {
-            tag1: String::from("Red"),
-            tag2: String::from("Green"),
-            tag3: String::from("Yellow"),
-            tag4: String::from("Blue"),
-            tag5: String::from("Purple"),
-            tag6: String::from("Orange"),
-            tag7: String::from("Gray"),
-            tag8: String::from("Cyan"),
+            tag1: String::from(t!("Red")),
+            tag2: String::from(t!("Green")),
+            tag3: String::from(t!("Yellow")),
+            tag4: String::from(t!("Blue")),
+            tag5: String::from(t!("Purple")),
+            tag6: String::from(t!("Orange")),
+            tag7: String::from(t!("Gray")),
+            tag8: String::from(t!("Cyan")),
         }
     }
 
@@ -259,6 +259,7 @@ fn preload_list_status_string_pathlist(
     // Get task manager information
     let (ls_dir_tasks, preload_tasks) = task_manager.get_task_counts();
 
+    // TODO i18n
     s.push_str(&format!("Loaded: {loaded}/{total}"));
     if loading > 0 {
         s.push_str(&format!(", Loading: {loading}"));
@@ -471,7 +472,7 @@ pub fn view_sorting_model<'a>(
 ) -> iced::Element<'a, crate::Message> {
     // Check if pathlist is empty to avoid panics
     if model.pathlist.paths.is_empty() {
-        return widget::text("No images found").into();
+        return widget::text(t!("No images found")).into();
     }
 
     let main_image_view = view_image_with_thumbs(config.thumbnail_style.clone(), model);
@@ -502,17 +503,17 @@ pub fn view_sorting_model<'a>(
     );
 
     let action_buttons = row![
-        widget::button(widget::text!("{}", t!("<- Previous")))
+        widget::button(widget::text(t!("<- Previous")))
             .on_press(crate::Message::Sorting(
                 SortingMessage::UserPressedPreviousImage
             ))
             .padding(10),
-        widget::button(widget::text!("{}", t!("Next ->")))
+        widget::button(widget::text(t!("Next ->")))
             .on_press(crate::Message::Sorting(
                 SortingMessage::UserPressedNextImage
             ))
             .padding(10),
-        widget::button(widget::text!("{}", t!("Select Folder")))
+        widget::button(widget::text(t!("Select Folder")))
             .on_press(crate::Message::UserPressedSelectFolder)
             .padding(10),
     ];
