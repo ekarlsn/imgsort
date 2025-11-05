@@ -1,7 +1,6 @@
 use crate::ui::{self, ButtonStyle};
 use iced::widget::{self, button, canvas, center, column, row, stack};
 use iced::{Color, Element, Length};
-use iced_aw::{drop_down, DropDown};
 use log::debug;
 use rust_i18n::t;
 use std::cmp::min;
