@@ -208,25 +208,16 @@ fn schedule_next_preload_image_after_one_finished(
 }
 
 fn is_loading(image: &ImageInfo) -> bool {
-    match image.data {
-        PreloadImage::Loading(_) => true,
-        _ => false,
-    }
+    matches!(image.data, PreloadImage::Loading(_))
 }
 
 #[allow(dead_code)] // For symmetry
 fn is_loaded(image: &ImageInfo) -> bool {
-    match image.data {
-        PreloadImage::Loaded(_) => true,
-        _ => false,
-    }
+    matches!(image.data, PreloadImage::Loaded(_))
 }
 
 fn is_not_loading(image: &ImageInfo) -> bool {
-    match image.data {
-        PreloadImage::NotLoading => true,
-        _ => false,
-    }
+    matches!(image.data, PreloadImage::NotLoading)
 }
 
 #[cfg(test)]

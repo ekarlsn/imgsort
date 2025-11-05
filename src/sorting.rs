@@ -414,9 +414,10 @@ pub fn update_sorting_model(
                 crate::Effect::None
             }
         }
-        SortingMessage::KeyboardEvent(iced::keyboard::Event::KeyPressed { key, .. })
-            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) =>
-        {
+        SortingMessage::KeyboardEvent(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+            ..
+        }) => {
             log::info!("Pressed escape, clearing edit tag name");
             model.editing_tag_name = None;
             Effect::None
