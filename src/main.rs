@@ -5,6 +5,7 @@ use iced::widget::{self, column};
 use iced::{Element, Subscription, Task};
 use iced_aw::Tabs;
 use image::ImageReader;
+use image::{DynamicImage, ImageDecoder};
 use log::debug;
 
 rust_i18n::i18n!("locales");
@@ -569,10 +570,23 @@ fn preload_image(path: String, dim: Dim, config: Config) -> (String, ImageData, 
 }
 
 fn get_resized_image(path: &str, dim: Dim) -> ImageData {
-    let image = ImageReader::open(path)
-        .unwrap()
-        .decode()
-        .unwrap()
+    let mut decoder = ImageReader::open(path).unwrap().into_decoder().unwrap();
+    let orientation = decoder.orientation().unwrap();
+    debug!("Orientation: {orientation:?}");
+
+    let image = DynamicImage::from_decoder(decoder).unwrap();
+    let image = match orientation {
+        image::metadata::Orientation::NoTransforms => image,
+        image::metadata::Orientation::Rotate90 => image.rotate90(),
+        image::metadata::Orientation::Rotate180 => image.rotate180(),
+        image::metadata::Orientation::Rotate270 => image.rotate270(),
+        image::metadata::Orientation::FlipHorizontal => image.fliph(),
+        image::metadata::Orientation::FlipVertical => image.flipv(),
+        image::metadata::Orientation::Rotate90FlipH => image.rotate90().fliph(),
+        image::metadata::Orientation::Rotate270FlipH => image.rotate270().fliph(),
+    };
+
+    let image = image
         .resize(dim.width, dim.height, image::imageops::FilterType::Triangle)
         .to_rgba8();
     let width = image.width();
