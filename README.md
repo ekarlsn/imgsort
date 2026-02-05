@@ -12,25 +12,11 @@ Run it in the folder you want to sort images
 
 ## TODO
 
-- [x] Nice colored tags
-- [x] Don't separate pathlist and preload_list. Keep it in one structure
-- [x] Thumbnails
-- [x] Fix crash when opened in empty dir
-- [x] Picture placeholder the same size as a picture
-- [x] Preload current image first
-- [x] Tabbed view, with iced_aw tabbed widget
-- [x] Add "Blazingly fast" to the readme
-- [x] Preloading images should be Loading, not Out of range
-- [x] Size detection
-- [x] Load thumbnails in parallell
-- [x] Tag buttons scale
-- [x] 8 Tags, no special delete
-- [x] Tag buttons remove dropdown, just rename
-- [ ] Internationalize
-- [ ] BUG: Pictures not loading in debug mode
+- [x] Internationalize
 - [ ] Navigate folders
+- [ ] Open on file
+- [ ] BUG: Pictures not loading in debug builds
 - [ ] Initial load bug
-- [ ] Fix crash on delete tag
 - [ ] Obvious UI
     - Tooltips
     - Labels
@@ -38,7 +24,6 @@ Run it in the folder you want to sort images
 - [ ] Save settings persistently
 - [ ] Config for thumbnails, size, above/below/side, amount
 - [ ] Config for shortcuts
-- [ ] More thumbnail views
 - [ ] Second window with other view, for dual screen
 - [ ] Don't create log file by default
 - [ ] Less yank after moving images
