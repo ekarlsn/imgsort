@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use iced::widget::{self, button, column, container, row, text};
 use iced::{Color, Element};
 
+use rust_i18n::t;
+
 use crate::sorting::tag_badge_color;
 use crate::{Message, Tag, TagNames};
 
@@ -18,17 +20,17 @@ pub fn view_actions_tab(
         container(
             column![
                 row![
-                    button("← Back").on_press(Message::UserPressedActionBack),
+                    button(text(t!("← Back"))).on_press(Message::UserPressedActionBack),
                     text(tag_name).size(24),
                 ]
                 .spacing(10)
                 .align_y(iced::Alignment::Center),
                 column![
-                    button("Delete").width(200),
-                    button("Move")
+                    button(text(t!("Delete"))).width(200),
+                    button(text(t!("Move")))
                         .width(200)
                         .on_press(Message::UserPressedActionCopy(*tag)),
-                    button("Copy").width(200),
+                    button(text(t!("Copy"))).width(200),
                 ]
                 .spacing(10)
                 .padding(20),
@@ -50,8 +52,8 @@ pub fn view_actions_tab(
         let buttons_col = column(buttons).spacing(10);
 
         let tag_buttons = column![
-            text("Actions").size(24),
-            text("Select a tag to perform actions:").size(16),
+            text(t!("Actions")).size(24),
+            text(t!("Select a tag to perform actions:")).size(16),
             buttons_col,
         ]
         .spacing(15);

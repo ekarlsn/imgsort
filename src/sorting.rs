@@ -273,7 +273,6 @@ fn preload_list_status_string_pathlist(
     // Get task manager information
     let (ls_dir_tasks, preload_tasks) = task_manager.get_task_counts();
 
-    // TODO i18n
     s.push_str(&format!("Loaded: {loaded}/{total}"));
     if loading > 0 {
         s.push_str(&format!(", Loading: {loading}"));

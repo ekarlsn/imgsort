@@ -1,49 +1,88 @@
+Select Folder:
+  en: Select Folder
+  se: Välj mapp
 <- Previous:
   en: <- Previous
   se: <- Förra
+Next ->:
+  en: Next ->
+  se: Nästa ->
 Actions:
   en: Actions
-  se: Actions
+  se: Agera
 Blue:
   en: Blue
-  se: Blue
+  se: Blå
 Cyan:
   en: Cyan
   se: Cyan
 Gray:
   en: Gray
-  se: Gray
+  se: Grå
 Green:
   en: Green
-  se: Green
+  se: Grön
 Main:
   en: Main
-  se: Main
+  se: Sortera
 Next ->:
   en: Next ->
-  se: Next ->
+  se: Nästa ->
 No images found:
   en: No images found
-  se: No images found
+  se: Inga bilder hittades
 No pictures in this directory, select another one:
   en: No pictures in this directory, select another one
-  se: No pictures in this directory, select another one
+  se: Inga bilder i den här katalogen, välj en annan
 Orange:
   en: Orange
   se: Orange
 Purple:
   en: Purple
-  se: Purple
+  se: Lila
 Red:
   en: Red
-  se: Red
-Select Folder:
-  en: Select Folder
-  se: Select Folder
+  se: Röd
 Settings:
   en: Settings
-  se: Settings
+  se: Inställningar
 Yellow:
   en: Yellow
-  se: Yellow
+  se: Gul
+Copy:
+  en: Copy
+  se: Kopiera
+Delete:
+  en: Delete
+  se: Ta bort
+Display Settings:
+  en: Display Settings
+  se: Visningsinställningar
+Move:
+  en: Move
+  se: Flytta
+Preload back:
+  en: Preload back
+  se: Förhandsladda bakåt
+Preload front:
+  en: Preload front
+  se: Förhandsladda framåt
+Save:
+  en: Save
+  se: Spara
+Scale down size WxH:
+  en: Scale down size WxH
+  se: Nerskalning Bredd x Höjd
+'Select a tag to perform actions:':
+  en: 'Select a tag to perform actions:'
+  se: 'Velj en markör:'
+Shortcuts:
+  en: Shortcuts
+  se: Snabbtangenter
+Sorting View Style:
+  en: Sorting View Style
+  se: Sorteringsvy stil
+← Back:
+  en: ← Back
+  se: ← Tillbaka
 _version: 2

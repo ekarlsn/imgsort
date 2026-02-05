@@ -3,6 +3,7 @@ use iced::Element;
 use std::collections::HashMap;
 
 use crate::{Config, Effect, Message, SortingViewStyle};
+use rust_i18n::t;
 
 #[derive(Debug, Clone)]
 pub struct SettingsModel {
@@ -130,9 +131,9 @@ impl SettingsModel {
             self.fields.get(&SettingsFieldName::ViewStyle).unwrap();
 
         column![
-            text("Settings"),
+            text(t!("Settings")),
             row![
-                text("Preload back"),
+                text(t!("Preload back")),
                 text_input("Preload back", preload_back_text)
                     .id("preload_back_num")
                     .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
@@ -142,7 +143,7 @@ impl SettingsModel {
                 text(preload_back_error)
             ],
             row![
-                text("Preload front"),
+                text(t!("Preload front")),
                 text_input("Preload front", preload_front_text)
                     .id("preload_front_num")
                     .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
@@ -151,7 +152,7 @@ impl SettingsModel {
                     ))),
                 text(preload_front_error),
             ],
-            text("Shortcuts"),
+            text(t!("Shortcuts")),
             row![
                 text("Tag 1"),
                 text_input("Tag 1", tag1_text)
@@ -162,9 +163,9 @@ impl SettingsModel {
                     ))),
                 text(tag1_error),
             ],
-            text("Display Settings"),
+            text(t!("Display Settings")),
             row![
-                text("Scale down size WxH"),
+                text(t!("Scale down size WxH")),
                 text_input("Width", scale_down_width_text)
                     .id("scale_down_size_width")
                     .on_input(|text| Message::Settings(SettingsMessage::UserUpdatedField(
@@ -181,7 +182,7 @@ impl SettingsModel {
                 text(scale_down_height_error),
             ],
             row![
-                text("Sorting View Style"),
+                text(t!("Sorting View Style")),
                 pick_list(
                     SortingViewStyle::all_variants()
                         .iter()
@@ -195,7 +196,7 @@ impl SettingsModel {
                 ),
                 text(view_style_error)
             ],
-            button("Save").on_press(Message::Settings(SettingsMessage::Save)),
+            button(text(t!("Save"))).on_press(Message::Settings(SettingsMessage::Save)),
         ]
         .into()
     }
