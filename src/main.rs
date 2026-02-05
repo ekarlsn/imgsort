@@ -382,7 +382,9 @@ impl Model {
             ModelState::Sorting => self.tag_names.clone(),
             _ => TagNames::new(),
         };
-        let actions_content = actions::view_actions_tab(&self.selected_action_tag, &tag_names);
+        let tag_counts = sorting::count_tags(&self.pathlist.paths);
+        let actions_content =
+            actions::view_actions_tab(&self.selected_action_tag, tag_names, &tag_counts);
 
         let settings_content = self.settings.view();
 

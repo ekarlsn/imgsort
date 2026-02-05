@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use iced::widget::{self, button, column, container, row, text};
 use iced::{Color, Element};
 
@@ -6,7 +8,8 @@ use crate::{Message, Tag, TagNames};
 
 pub fn view_actions_tab(
     selected_action_tag: &Option<Tag>,
-    tag_names: &TagNames,
+    tag_names: TagNames,
+    tag_counts: &HashMap<Tag, u32>,
 ) -> Element<'static, Message> {
     if let Some(tag) = selected_action_tag {
         // Show tag action view
@@ -35,17 +38,21 @@ pub fn view_actions_tab(
         .padding(20)
         .into()
     } else {
-        // Show tag list
+        // Show tag button list
+        let mut buttons = Vec::new();
+
+        for (tag, name) in tag_names.enumerate() {
+            if let Some(count) = tag_counts.get(&tag) {
+                buttons.push(view_action_tag_button(tag, name.clone(), *count));
+            }
+        }
+
+        let buttons_col = column(buttons).spacing(10);
+
         let tag_buttons = column![
             text("Actions").size(24),
             text("Select a tag to perform actions:").size(16),
-            column![
-                view_action_tag_button(Tag::Tag1, tag_names.tag1.to_string()),
-                view_action_tag_button(Tag::Tag2, tag_names.tag2.to_string()),
-                view_action_tag_button(Tag::Tag3, tag_names.tag3.to_string()),
-                view_action_tag_button(Tag::Tag4, tag_names.tag4.to_string()),
-            ]
-            .spacing(10),
+            buttons_col,
         ]
         .spacing(15);
 
@@ -53,8 +60,8 @@ pub fn view_actions_tab(
     }
 }
 
-fn view_action_tag_button(tag: Tag, name: String) -> Element<'static, Message> {
-    let tag_name = name;
+fn view_action_tag_button(tag: Tag, name: String, count: u32) -> Element<'static, Message> {
+    let tag_name = format!("{name} ({count})");
 
     widget::button(text(tag_name))
         .width(200)

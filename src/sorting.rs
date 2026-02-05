@@ -121,6 +121,20 @@ impl TagNames {
             Tag::Tag8 => &self.tag8,
         }
     }
+
+    pub fn enumerate(&self) -> impl Iterator<Item = (Tag, &String)> {
+        vec![
+            (Tag::Tag1, &self.tag1),
+            (Tag::Tag2, &self.tag2),
+            (Tag::Tag3, &self.tag3),
+            (Tag::Tag4, &self.tag4),
+            (Tag::Tag5, &self.tag5),
+            (Tag::Tag6, &self.tag6),
+            (Tag::Tag7, &self.tag7),
+            (Tag::Tag8, &self.tag8),
+        ]
+        .into_iter()
+    }
 }
 
 pub fn tag_badge_color(tag: &Tag) -> iced::Color {
@@ -480,14 +494,7 @@ pub fn view_sorting_model<'a>(
     let preload_status_string = preload_list_status_string_pathlist(&model.pathlist, task_manager);
     debug!("Preload status: {preload_status_string}");
 
-    let mut tag_count = std::collections::HashMap::new();
-
-    for metadata in model.pathlist.paths.iter().map(|info| &info.metadata) {
-        if let Some(tag) = metadata.tag {
-            let count = tag_count.entry(tag).or_insert(0);
-            *count += 1;
-        }
-    }
+    let tag_count = count_tags(&model.pathlist.paths);
 
     let status_text = widget::text(format!(
         "({index}/{total}) {path}",
@@ -586,4 +593,17 @@ fn view_with_thumbnails_on_top(model: &crate::Model) -> Element<Message> {
     }
 
     column![widget::Row::from_vec(thumbs), image].into()
+}
+
+pub fn count_tags(paths: &Vec<ImageInfo>) -> HashMap<Tag, u32> {
+    let mut tag_count = std::collections::HashMap::new();
+
+    for metadata in paths.iter().map(|info| &info.metadata) {
+        if let Some(tag) = metadata.tag {
+            let count = tag_count.entry(tag).or_insert(0);
+            *count += 1;
+        }
+    }
+
+    tag_count
 }
